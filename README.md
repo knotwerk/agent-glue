@@ -10,7 +10,9 @@ Close your laptop without worrying about rebuilding your agent sessions tomorrow
 
 Agent Glue stays as close as possible to the intended Claude, Codex and VS Code
 workflow. Keep the real CLIs, native terminals, account settings and updates.
-Add only the small pieces that make everyday work less painful.
+Add only the small pieces that make everyday work less painful. Intentionally
+minimal: terminal continuity and a useful sidebar, with the agents themselves
+still running in their normal CLIs.
 
 It is best used with **VS Code Remote SSH to an always-on server**: agents run in
 tmux on the server while your laptop is just the interface. Close the laptop or
@@ -42,13 +44,24 @@ on macOS, dictation and clipboard images.
 - **Come back tomorrow.** Sessions reconnects to agents you started in tmux.
   Your remote host must stay running: tmux survives closing the laptop, not
   rebooting the server. Agent Glue does not automatically wrap ordinary shells.
+- **Recover after a server restart.** Sessions saves recent session metadata on
+  disk. When a recorded resume ID and the CLI's saved conversation are available,
+  it offers an `agent restore: …` task to recreate the named tmux session and
+  resume that conversation. This can help after a power cut, but does not preserve
+  running processes, unsaved work or a conversation the CLI never saved.
+- **Keep accounts separate.** Run multiple Claude or Codex logins side by side
+  using separate CLI configuration directories—for example, personal and client
+  subscriptions. Agent Glue keeps their terminals organised and supports the
+  account-directory conventions described [below](#multiple-accounts-and-client-subscriptions).
+  Sign-in and credentials remain with the CLIs.
 - **Find the file.** Paths mentioned in the selected terminal appear in Files.
   Recent mentions and edits sort newest-first. Filter by type or time, sort by
   name, and pin useful files. Open across projects without opening another
   VS Code window; right-click to download.
 - **Read and review.** Preview Markdown, Mermaid diagrams, images and HTML.
   Review hosted PRs or prepared local changes. Keep stable ordering, mark items
-  read, and leave local feedback before anything is pushed.
+  read, and leave local feedback for your AI before anything is pushed. Prepared
+  local reviews do not require a published GitHub PR.
 - **Keep track.** Tasks shows agent-reported progress, blockers and next steps.
   **Set up with agent** pastes instructions for maintaining small local task
   files. You press Enter; it does not submit automatically.
