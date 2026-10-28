@@ -1,0 +1,65 @@
+{
+  "version": "0.1.48",
+  "publisher": "knotwerk",
+  "engines": {
+    "vscode": "^1.100.0"
+  },
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/knotwerk/agent-glue.git"
+  },
+  "extensionKind": [
+    "workspace"
+  ],
+  "capabilities": {
+    "untrustedWorkspaces": {
+      "supported": false
+    },
+    "virtualWorkspaces": false
+  },
+  "name": "agent-glue-sessions",
+  "displayName": "Agent Glue Sessions",
+  "description": "Keep Claude and Codex tmux sessions attached to native VS Code terminals, including over Remote SSH.",
+  "main": "./extension.js",
+  "activationEvents": [
+    "onStartupFinished"
+  ],
+  "contributes": {
+    "commands": [
+      {
+        "command": "tmuxClaude.attachAll",
+        "title": "Agent Glue: Attach Agent Tmux Sessions"
+      }
+    ],
+    "taskDefinitions": [
+      {
+        "type": "agentGlue.session",
+        "required": [
+          "session"
+        ],
+        "properties": {
+          "session": {
+            "type": "string",
+            "description": "Exact session or restoration identity"
+          }
+        }
+      }
+    ]
+  },
+  "preview": true,
+  "categories": [
+    "Other"
+  ],
+  "keywords": [
+    "claude",
+    "codex",
+    "tmux",
+    "ssh",
+    "terminal"
+  ],
+  "homepage": "https://github.com/knotwerk/agent-glue#readme",
+  "bugs": {
+    "url": "https://github.com/knotwerk/agent-glue/issues"
+  }
+}

@@ -1,0 +1,175 @@
+{
+  "version": "0.1.48",
+  "activationEvents": [
+    "onStartupFinished"
+  ],
+  "publisher": "knotwerk",
+  "engines": {
+    "vscode": "^1.100.0"
+  },
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/knotwerk/agent-glue.git"
+  },
+  "extensionKind": [
+    "workspace"
+  ],
+  "capabilities": {
+    "untrustedWorkspaces": {
+      "supported": false
+    },
+    "virtualWorkspaces": false
+  },
+  "name": "agent-glue-companion",
+  "displayName": "Agent Glue Companion",
+  "description": "Find agent files across projects, preview Markdown and HTML, review PRs, and track tasks beside your CLI terminals.",
+  "main": "./dist/extension.cjs",
+  "contributes": {
+    "commands": [
+      {
+        "command": "agentGlue.preview",
+        "title": "Agent Glue: Preview Document"
+      },
+      {
+        "command": "agentGlue.draft",
+        "title": "Agent Glue: Open Dictation Draft"
+      },
+      {
+        "command": "agentGlue.layout",
+        "title": "Agent Glue: Toggle Right Sidebar Layout"
+      },
+      {
+        "command": "agentGlue.pin",
+        "title": "Agent Glue: Pin File",
+        "icon": "$(pin)"
+      },
+      {
+        "command": "agentGlue.installInstructions",
+        "title": "Agent Glue: Install Agent Instructions"
+      },
+      {
+        "command": "agentGlue.dictate",
+        "title": "Agent Glue: Dictate Note"
+      },
+      {
+        "command": "agentGlue.showfiles",
+        "title": "Agent Glue: Files",
+        "icon": "$(files)"
+      },
+      {
+        "command": "agentGlue.showprs",
+        "title": "Agent Glue: Pull requests",
+        "icon": "$(git-pull-request)"
+      },
+      {
+        "command": "agentGlue.refreshResources",
+        "title": "Agent Glue: Refresh",
+        "icon": "$(refresh)"
+      },
+      {
+        "command": "agentGlue.clearFiles",
+        "title": "Agent Glue: Clear recent files",
+        "icon": "$(clear-all)"
+      },
+      {
+        "command": "agentGlue.chooseSession",
+        "title": "Agent Glue: Choose Session"
+      },
+      {
+        "command": "agentGlue.showtasks",
+        "title": "Agent Glue: Tasks",
+        "icon": "$(checklist)"
+      }
+    ],
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "agentGlue",
+          "title": "Agent Glue",
+          "icon": "media/icon.svg"
+        }
+      ]
+    },
+    "views": {
+      "agentGlue": [
+        {
+          "type": "webview",
+          "id": "agentGlue.companion",
+          "name": "Agent Glue"
+        }
+      ]
+    },
+    "menus": {
+      "editor/title": [
+        {
+          "command": "agentGlue.preview",
+          "when": "resourceExtname == .md || resourceExtname == .html",
+          "group": "navigation"
+        }
+      ],
+      "view/title": [
+        {
+          "command": "agentGlue.showfiles",
+          "when": "view == agentGlue.companion",
+          "group": "navigation@1"
+        },
+        {
+          "command": "agentGlue.showprs",
+          "when": "view == agentGlue.companion",
+          "group": "navigation@2"
+        },
+        {
+          "command": "agentGlue.refreshResources",
+          "when": "view == agentGlue.companion",
+          "group": "navigation@3"
+        },
+        {
+          "command": "agentGlue.pin",
+          "when": "view == agentGlue.companion && agentGlue.resourceTab == files",
+          "group": "fileActions@1"
+        },
+        {
+          "command": "agentGlue.clearFiles",
+          "when": "view == agentGlue.companion && agentGlue.resourceTab == files",
+          "group": "fileActions@2"
+        },
+        {
+          "command": "agentGlue.chooseSession",
+          "when": "view == agentGlue.companion",
+          "group": "fileActions@3"
+        },
+        {
+          "command": "agentGlue.showtasks",
+          "when": "view == agentGlue.companion",
+          "group": "navigation@2.5"
+        }
+      ]
+    },
+    "keybindings": [
+      {
+        "command": "agentGlue.dictate",
+        "key": "ctrl+alt+d",
+        "mac": "ctrl+alt+d",
+        "when": "isWorkspaceTrusted"
+      }
+    ]
+  },
+  "preview": true,
+  "categories": [
+    "Other",
+    "Visualization"
+  ],
+  "keywords": [
+    "claude",
+    "codex",
+    "ssh",
+    "markdown",
+    "pull requests",
+    "files"
+  ],
+  "homepage": "https://github.com/knotwerk/agent-glue#readme",
+  "bugs": {
+    "url": "https://github.com/knotwerk/agent-glue/issues"
+  }
+}

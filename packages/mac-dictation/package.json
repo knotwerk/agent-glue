@@ -1,0 +1,45 @@
+{
+  "name": "agent-glue-mac-dictation",
+  "displayName": "Agent Glue Mac Dictation",
+  "description": "Local macOS Dictation control for Agent Glue",
+  "version": "0.1.48",
+  "publisher": "knotwerk",
+  "engines": {
+    "vscode": "^1.100.0"
+  },
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/knotwerk/agent-glue.git"
+  },
+  "extensionKind": [
+    "ui"
+  ],
+  "capabilities": {
+    "untrustedWorkspaces": {
+      "supported": false
+    },
+    "virtualWorkspaces": false
+  },
+  "main": "./extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "agentGlueMac.startDictation",
+        "title": "Agent Glue: Start macOS Dictation"
+      },
+      {
+        "command": "agentGlueMac.status",
+        "title": "Agent Glue: Check Mac Dictation Helper"
+      },
+      {
+        "command": "agentGlueMac.readClipboardImage",
+        "title": "Agent Glue: Read Mac Clipboard Image"
+      },
+      {
+        "command": "agentGlueMac.downloadFile",
+        "title": "Agent Glue: Download File to Computer"
+      }
+    ]
+  }
+}

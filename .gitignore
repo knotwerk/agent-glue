@@ -1,0 +1,15 @@
+node_modules/
+dist/
+*.vsix
+_script_outputs/
+.local/
+.DS_Store
+coverage/
+
+# Local secrets must never enter source or release history.
+.env
+.env.*
+*.pem
+*.key
+*.p12
+*.pfx

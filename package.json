@@ -1,0 +1,32 @@
+{
+  "name": "agent-glue",
+  "version": "0.1.48",
+  "private": true,
+  "description": "Native agent terminals with document previews and remote attachments",
+  "engines": {
+    "node": ">=22"
+  },
+  "workspaces": [
+    "packages/sessions",
+    "packages/companion",
+    "packages/mac-dictation"
+  ],
+  "scripts": {
+    "test": "node scripts/test.cjs",
+    "check": "node scripts/check.cjs",
+    "build": "node scripts/build.cjs",
+    "package": "npm run build && node scripts/package.cjs",
+    "screenshots": "node scripts/screenshots.cjs"
+  },
+  "devDependencies": {
+    "@vscode/vsce": "4.0.0",
+    "esbuild": "0.25.10",
+    "playwright": "1.56.1"
+  },
+  "dependencies": {
+    "markdown-it": "14.3.3",
+    "mermaid": "12.2.0",
+    "parse5": "7.3.0"
+  },
+  "license": "MIT"
+}

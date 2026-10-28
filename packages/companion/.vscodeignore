@@ -1,0 +1,9 @@
+**
+!package.json
+!README.md
+!media/**
+!dist/extension.cjs
+!dist/mermaid.js
+!dist/THIRD_PARTY_LICENSES.txt
+!dist/mac-dictation.vsix
+!LICENSE.txt
