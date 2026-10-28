@@ -1,5 +1,11 @@
 # Agent Glue
 
+> **Disclaimer**
+>
+> Technically this is mental health device for the terminally AI-pilled. Designed to reduce “but what if my agents need me?” anxiety so you can close the laptop and go to sleep. Also helps with hair pulling.
+>
+> Not FDA approved. Currently available as a black-market digital wellness offering under the MIT licence. Side effects may include going outside.
+
 Close your laptop without worrying about rebuilding your agent sessions tomorrow.
 
 Agent Glue stays as close as possible to the intended Claude, Codex and VS Code
