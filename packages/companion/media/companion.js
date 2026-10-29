@@ -11,7 +11,7 @@
   let state = { sessions: [], files: [], draft: {}, uploads: [] };
   let draftId;
   const expandedReviews=new Set(),requestedReviews=new Set();
-  const closedReviewNodes=new Set(),closedTasks=new Set();
+  const closedReviewNodes=new Set(),expandedTasks=new Set(),expandedStatusSections=new Set();
   let reviewFolder;
   let recentSession, recentLimit=20;
   const sessionFileOptions={...vscode.getState?.()?.sessionFileOptions};
@@ -183,8 +183,9 @@
       const key=branch.firstElementChild?.dataset.reviewKey;
       if(key){if(branch.open)closedReviewNodes.delete(key);else closedReviewNodes.add(key);}
     }
-    for(const row of container.querySelectorAll('.task-item')){if(row.open)closedTasks.delete(row.dataset.taskKey);else closedTasks.add(row.dataset.taskKey);}
-    if(reviewFolder!==state.resourceFolder){closedTasks.clear();requestedReviews.clear();expandedReviews.clear();closedReviewNodes.clear();reviewFolder=state.resourceFolder;}
+    for(const section of container.querySelectorAll('.task-section')){if(section.open)expandedStatusSections.add(section.dataset.sectionKey);else expandedStatusSections.delete(section.dataset.sectionKey);}
+    for(const row of container.querySelectorAll('.task-item')){if(row.open)expandedTasks.add(row.dataset.taskKey);else expandedTasks.delete(row.dataset.taskKey);}
+    if(reviewFolder!==state.resourceFolder){expandedTasks.clear();requestedReviews.clear();expandedReviews.clear();closedReviewNodes.clear();reviewFolder=state.resourceFolder;}
     if(reviewGeneration!==state.resourceGeneration){requestedReviews.clear();reviewGeneration=state.resourceGeneration;}
     for(const item of state.resourceItems||[])if(item.reviewDocuments||item.reviewError)requestedReviews.delete(item.id);
     byId('task-controls').hidden=tab!=='tasks';
@@ -207,28 +208,39 @@
       const filter=byId('task-filter').value;
       const items=(state.resourceItems||[]).filter(task=>filter==='all'||(filter==='done'?task.status==='done':task.status!=='done'));
       for(const task of items){
-        const row=element('details','task-item');row.dataset.taskKey=(state.selectedSessionId||'')+':'+task.id;row.open=!closedTasks.has(row.dataset.taskKey);
+        const row=element('details','task-item');row.dataset.taskKey=(state.selectedSessionId||'')+':'+task.id;row.open=expandedTasks.has(row.dataset.taskKey);
         const title=element('summary');
         const status=element('span','task-status task-'+task.status,{active:'●',blocked:'!',review:'◉',done:'✓'}[task.status]||'○');
         status.title=task.status;status.setAttribute('aria-label',task.status);
-        title.append(status,element('span','item-label',task.label));title.title=task.label;
+        title.append(element('span','task-chevron','›'),status,element('span','item-label',task.label),element('span','task-state-label',task.status));title.title=task.label;
         const updated=element('time','task-updated',relativeTime(task.updatedAt));
         updated.dateTime=task.updatedAt;updated.title='Last updated: '+new Date(task.updatedAt).toLocaleString();
         title.append(updated);row.append(title);
-        row.append(element('p','task-meta',['Reported '+task.status,task.owner].filter(Boolean).join(' · ')));
-        if(task.source==='snapshot')row.append(element('p','task-meta','AI snapshot of recent terminal output · not live monitoring'));
-        if(Number.isSafeInteger(task.summaryTokens))row.append(element('p','task-meta','Status refresh: '+task.summaryTokens.toLocaleString()+' tokens'));
-        if(task.request)row.append(element('p','task-description','Your request: '+task.request));
-        if(task.summary)row.append(element('p','task-description',task.summary));
-        if(task.next)row.append(element('p','task-description','Next: '+task.next));
-        if(task.files?.length)row.append(element('p','task-description','Files: '+task.files.join(', ')));
-        if(task.agents?.length)row.append(element('p','task-description','Agents (reported): '+task.agents.join('; ')));
-        if(Number.isSafeInteger(task.tokens))row.append(element('p','task-meta','Tokens (agent-reported): '+task.tokens.toLocaleString()));
+        const body=element('div','task-body');row.append(body);
+        const textSection=(label,text)=>{if(!text)return;const section=element('section','task-field');section.append(element('h3','',label),element('p','task-description',text));body.append(section);};
+        textSection('Progress',task.summary);
+        textSection(task.status==='blocked'?'Blocker / next step':'Next step',task.next);
+        const disclosure=(key,label,values)=>{
+          if(!values.length)return;
+          const section=element('details','task-section');section.dataset.sectionKey=row.dataset.taskKey+':'+key;section.open=expandedStatusSections.has(section.dataset.sectionKey);
+          section.append(element('summary','',label));
+          if(key==='request')section.append(element('p','task-description',values[0]));
+          else{const list=element('ul');for(const value of values)list.append(element('li','',value));section.append(list);}
+          body.append(section);
+        };
+        disclosure('files',`Files (${task.files?.length||0})`,task.files||[]);
+        disclosure('agents',`Agents (${task.agents?.length||0})`,task.agents||[]);
+        disclosure('request','Original request',task.request?[task.request]:[]);
+        const meta=[task.source==='snapshot'?'Snapshot · not live activity':'Agent-reported',task.owner];
+        if(Number.isSafeInteger(task.summaryTokens))meta.push('Refresh: '+task.summaryTokens.toLocaleString()+' tokens');
+        if(Number.isSafeInteger(task.tokens))meta.push('Task: '+task.tokens.toLocaleString()+' reported tokens');
+        body.append(element('p','task-meta',meta.filter(Boolean).join(' · ')));
         fragment.append(row);
       }
       container.replaceChildren(fragment);
-      byId('files-empty').textContent=state.resourceStatus||(items.length?'':(state.resourceItems||[]).length?'No reported work matches this filter.':'No status reported for this terminal yet. Run the status robot to summarize recent terminal output with a one-off CLI call. This uses tokens; ordinary Refresh does not.');
-      byId('files-empty').hidden=items.length>0&&!state.resourceStatus;
+      const loading=state.statusRunBusy&&(!state.statusRunSessionId||state.statusRunSessionId===state.selectedSessionId);
+      byId('files-empty').textContent=loading?'Generating status…':state.resourceStatus||(items.length?'':(state.resourceItems||[]).length?'No work matches this filter.':'Run 🤖 to summarize this terminal.');
+      byId('files-empty').hidden=items.length>0&&!state.resourceStatus&&!loading;
       return;
     }
     if(tab==='prs'){
@@ -587,7 +599,7 @@
     if (!message || typeof message.type !== 'string') return;
     if (message.type === 'state') {
       state = { sessions: [], files: [], draft: {}, uploads: [], ...message.state };
-      const fileState=JSON.stringify([Math.floor(Date.now()/60000),state.selectedSessionId,state.sessions,state.files,state.filesMessage,state.resourceTab,state.prFilter,state.resourceItems,state.resourceStatus,state.resourceFolder,state.resourceGeneration]);
+      const fileState=JSON.stringify([Math.floor(Date.now()/60000),state.selectedSessionId,state.sessions,state.files,state.filesMessage,state.resourceTab,state.prFilter,state.resourceItems,state.resourceStatus,state.resourceFolder,state.resourceGeneration,state.statusRunBusy,state.statusRunSessionId]);
       if(fileState!==lastFileState){lastFileState=fileState;renderFiles();}
       const robot=byId('task-instructions');if(robot){robot.disabled=Boolean(state.statusRunBusy);robot.textContent=state.statusRunBusy?'🤖 Running…':'🤖 Run';}
       renderWebApps();

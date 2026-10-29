@@ -16,7 +16,7 @@ function activate(context){
   const views=new Set(),panels=new Map(),uploads=new core.Uploads();
   const browserLinks=new BrowserLinks({mermaidPath:path.join(context.extensionPath,'dist/mermaid.js')});
   context.subscriptions.push(browserLinks);
-  const statusReports=context.workspaceState.get('statusReports',{});let statusRunBusy=false;
+  const statusReports=context.workspaceState.get('statusReports',{});let statusRunBusy=false,statusRunSessionId;
   const apps=new WebApps(core.run);let appsPanel,appsSignature,forkBusy=false;
   let sidebar,sidebarWebview,draftPanel,draftWebview,sessionList=[],selected=context.workspaceState.get('selected'),files=context.workspaceState.get('files',{});
   // Recover files hidden with the removed sidebar action; honor explicit [remove] directives.
@@ -97,10 +97,10 @@ function activate(context){
   }
   async function runStatus(){
     if(statusRunBusy)return;
-    statusRunBusy=true;publish();
+    statusRunBusy=true;statusRunSessionId=selected;publish();
     try{
       await refresh();
-      const source=byId(selected),active=vscode.window.activeTerminal;
+      const source=byId(selected),active=vscode.window.activeTerminal;statusRunSessionId=source?.id;
       if(!source||!sidebar?.visible)throw Error('Select an agent terminal and open Agent Glue before running status.');
       const {stdout}=await core.run('tmux',['capture-pane','-p','-J','-t',source.pane,'-S','-500'],{maxBuffer:1024*1024});
       if(selected!==source.id||active!==vscode.window.activeTerminal||!sidebar?.visible)throw Error('Selected terminal changed. Run status again.');
@@ -111,7 +111,7 @@ function activate(context){
       await context.workspaceState.update('statusReports',statusReports);
       status='Status updated for '+source.name+'.';
       if(selected===source.id&&resourceTab==='tasks')loadResources(true);
-    }finally{statusRunBusy=false;publish();}
+    }finally{statusRunBusy=false;statusRunSessionId=undefined;publish();}
   }
   async function forkConversation(target){
     if(forkBusy)return;
@@ -140,7 +140,7 @@ function activate(context){
   let queue=Promise.resolve();
   const byId=id=>sessionList.find(s=>s.id===id);
   const save=async()=>{await context.workspaceState.update('files',files);await context.workspaceState.update('draft',draft);await context.workspaceState.update('selected',selected);};
-  const state=()=>({statusRunBusy,webApps:apps.items.filter(item=>item.sessionId===selected).map(item=>({...item,label:appLabel(item.url)})),webAppsActiveTotal:apps.items.filter(item=>item.running).length,sessions:sessionList,selectedSessionId:selected,filesMessage:byId(selected)?`No existing files found in the recent terminal output for ${byId(selected).name}.`:'No matching agent session for the selected terminal. Select an attached agent terminal or use Choose Session in the view menu.',resourceTab,prFilter,prSort,prReadFilter,resourceItems:visibleResources(),resourceStatus,resourceGeneration,resourceFolder:resourceRoot||byId(selected)?.cwd||'',files:(files[selected]||[]).filter(f=>!f.hidden&&!f.missing),draft,status:status||connectionStatus});
+  const state=()=>({statusRunBusy,statusRunSessionId,webApps:apps.items.filter(item=>item.sessionId===selected).map(item=>({...item,label:appLabel(item.url)})),webAppsActiveTotal:apps.items.filter(item=>item.running).length,sessions:sessionList,selectedSessionId:selected,filesMessage:byId(selected)?`No existing files found in the recent terminal output for ${byId(selected).name}.`:'No matching agent session for the selected terminal. Select an attached agent terminal or use Choose Session in the view menu.',resourceTab,prFilter,prSort,prReadFilter,resourceItems:visibleResources(),resourceStatus,resourceGeneration,resourceFolder:resourceRoot||byId(selected)?.cwd||'',files:(files[selected]||[]).filter(f=>!f.hidden&&!f.missing),draft,status:status||connectionStatus});
   const post=(view,message)=>{try{void Promise.resolve(view.postMessage(message)).catch(()=>views.delete(view));}catch{views.delete(view);}};
   const publish=()=>{for(const view of views)post(view,{type:'state',state:state()});};
   function loadResources(force=false){

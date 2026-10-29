@@ -271,9 +271,12 @@ test('browser: resource icons, PR filters and local PR document links work witho
   assert.equal(await page.locator('.file-item').count(),2);
   assert.equal(await page.locator('#file-filter-notice').isVisible(),false);
   const taskState={resourceTab:'tasks',resourceFolder:'/synthetic',files:[],draft:{},resourceItems:[
-    {id:'a',label:'Active work',status:'active',owner:'claude-test',summary:'<script>unsafe()</script>',files:['src/example.js'],agents:['checker: done'],tokens:1200,next:'Run tests',updatedAt:new Date(Date.now()-5*60000).toISOString()},
+    {id:'a',label:'Active work',status:'active',owner:'claude-test',request:'A long original request. '.repeat(100),summary:'<script>unsafe()</script>',files:['src/example.js'],agents:['checker: done'],tokens:1200,next:'Run tests',updatedAt:new Date(Date.now()-5*60000).toISOString()},
     {id:'d',label:'Finished work',status:'done',updatedAt:'2026-10-21T11:00:00Z'}
   ]};
+  await setState({resourceTab:'tasks',resourceItems:[],statusRunBusy:true,files:[],draft:{}});
+  assert.equal(await page.locator('#files-empty').textContent(),'Generating status…');
+  assert.equal(await page.getByRole('button',{name:'Run status robot'}).isDisabled(),true);
   await setState(taskState);
   await page.getByLabel('Filter terminal status').selectOption('active');
   assert.equal(await page.locator('.task-item').count(),1);
@@ -281,11 +284,23 @@ test('browser: resource icons, PR filters and local PR document links work witho
   assert.equal(await page.locator('.task-updated').getAttribute('datetime'),taskState.resourceItems[0].updatedAt);
   assert.match(await page.locator('.task-updated').getAttribute('title'),/^Last updated: /);
   assert.equal(await page.locator('#file-controls').isVisible(),false);
-  assert.equal(await page.locator('.task-item').getAttribute('open'),'');
-  assert.match(await page.locator('.task-item').textContent(),/Files: src\/example.js/);
-  assert.match(await page.locator('.task-item').textContent(),/Tokens \(agent-reported\): 1,200/);
-  await page.locator('.task-item summary').click();
+  assert.equal(await page.locator('.task-item').getAttribute('open'),null);
+  assert.equal(await page.locator('.task-body').isVisible(),false);
+  assert.ok((await page.locator('.task-item').boundingBox()).height<42,'collapsed work item is a single compact row');
+  await page.locator('.task-item > summary').click();
   assert.equal(await page.locator('.task-description').first().textContent(),'<script>unsafe()</script>');
+  const request=page.locator('.task-section').filter({has:page.locator('summary',{hasText:'Original request'})});
+  assert.equal(await request.getAttribute('open'),null);
+  assert.equal(await request.locator('p').isVisible(),false);
+  await request.locator('summary').click();
+  assert.equal(await request.locator('p').textContent(),taskState.resourceItems[0].request);
+  assert.match(await page.locator('.task-body').textContent(),/Task: 1,200 reported tokens/);
+  assert.match(await page.locator('.task-body').textContent(),/Files \(1\)/);
+  await setState({...taskState,statusRunBusy:true});
+  assert.equal(await page.locator('.task-item').getAttribute('open'),'');
+  assert.equal(await request.getAttribute('open'),'');
+  assert.equal(await page.locator('#files-empty').textContent(),'Generating status…');
+  await page.locator('.task-item > summary').click();
   await setState(taskState);
   assert.equal(await page.locator('.task-item').getAttribute('open'),null);
   await page.getByLabel('Filter terminal status').selectOption('done');

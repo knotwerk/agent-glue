@@ -152,7 +152,9 @@ files, not a scan of the project; up to 100 recent files are retained.
 Choose **Terminal Status** (pulse icon) in the sidebar toolbar to see what the selected
 terminal is working on: the original user request, progress, blockers, affected
 files, and reported subagent activity. Newest reports appear first, including
-completed work. Reports are snapshots with update times, not live monitoring.
+completed work. Each row starts collapsed with a status icon, short title, state
+and update age. Expand it for Progress and Next step, then drill into Files,
+Agents or Original request. Reports are snapshots, not live monitoring.
 
 **🤖 Run** starts a separate, non-interactive Claude or Codex CLI call using the
 selected terminal’s account. It summarizes the last 500 visible terminal lines

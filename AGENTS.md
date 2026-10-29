@@ -16,4 +16,7 @@ Do not delete files or terminate existing processes. Keep runtime output, screen
 conversations, inbox contents, credentials, and VSIXs out of git.
 
 Publish only after inspecting the staged files for private material. Work in
-the standalone repository on main; keep changes scoped to this repository.
+the standalone repository on a dev branch; keep changes scoped to this repository.
+Do not push or merge to main without the user’s explicit approval. Let dev changes
+be exercised for about a week before proposing promotion; elapsed time alone is
+not approval.
