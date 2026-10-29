@@ -11,6 +11,14 @@
   pull request when contributing from a fork.
 - Never delete files or terminate processes as part of development tooling.
 
+## Development and promotion
+
+Ongoing maintainer work is committed and pushed directly to `dev`. Use a separate
+feature branch only when requested; outside contributors can still use fork PRs.
+Exercise the dev build in daily use for about a week without issues before
+proposing promotion to `main`. Merging or pushing to `main` always requires the
+maintainer’s explicit approval; elapsed time and passing checks are not approval.
+
 ## Tests must be hermetic
 
 - Never interact with real agent terminals. Inject tmux responses (stub
