@@ -143,14 +143,17 @@ test('browser: screenshot drops upload and Clear text preserves recipient and at
   assert.equal(await page.evaluate(()=>window.sent.filter(m=>m.type==='dictate').length),dictationCount+1);
 
   await page.evaluate(()=>{
+    const picker=document.querySelector('#target');picker.add(new Option('New recipient','two'));picker.value='two';
     const data=new DataTransfer();data.setData('text/uri-list','file:///Users/example/review%20two.html');
     document.dispatchEvent(new DragEvent('drop',{bubbles:true,cancelable:true,dataTransfer:data}));
     const clipboard=new DataTransfer();clipboard.setData('text/plain','"/Users/example/another review.html"');
     document.querySelector('#draft-text').dispatchEvent(new ClipboardEvent('paste',{bubbles:true,cancelable:true,clipboardData:clipboard}));
     const html=new DataTransfer();html.items.add(new File(['<html>Review</html>'],'report.html',{type:'text/html'}));
-    document.dispatchEvent(new DragEvent('drop',{bubbles:true,cancelable:true,dataTransfer:html}));
+    document.dispatchEvent(new DragEvent('drop',{bubbles:true,cancelable:true,dataTransfer:html}));picker.value='one';
   });
   await page.waitForFunction(()=>window.sent.some(m=>m.type==='uploadStart'&&m.name==='report.html'));
+  assert.ok(await page.evaluate(()=>window.sent.filter(m=>m.type==='importLocalFiles').every(m=>m.targetId==='two')),'paste uses picker selection before host state catches up');
+  assert.ok(await page.evaluate(()=>window.sent.some(m=>m.type==='uploadStart'&&m.name==='report.html'&&m.targetId==='two')));
   assert.deepEqual(await page.evaluate(()=>window.sent.filter(m=>m.type==='importLocalFiles').map(m=>m.paths)),[['file:///Users/example/review%20two.html'],['/Users/example/another review.html']]);
   assert.equal(await page.evaluate(()=>{const data=new DataTransfer();data.setData('text/plain','Please review /Users/example/file.html');return document.querySelector('#draft-text').dispatchEvent(new ClipboardEvent('paste',{bubbles:true,cancelable:true,clipboardData:data}));}),true,'ordinary prose is not consumed');
   assert.equal(await page.evaluate(()=>{const data=new DataTransfer();data.setData('text/plain','/resume');return document.querySelector('#draft-text').dispatchEvent(new ClipboardEvent('paste',{bubbles:true,cancelable:true,clipboardData:data}));}),true,'slash commands remain ordinary text');

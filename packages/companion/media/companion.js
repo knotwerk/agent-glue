@@ -554,7 +554,7 @@
   }
 
   function enqueueFiles(files) {
-    const targetId=state.draft?.targetId,batchId=crypto.randomUUID(),batch=[];
+    const targetId=targetSelect.value||state.draft?.targetId,batchId=crypto.randomUUID(),batch=[];
     for (const file of files) {
       if (file.size > MAX_BYTES) {
         showError(`${file.name}: files must be 25 MB or smaller.`);
@@ -570,7 +570,7 @@
         for(const {file,id} of batch)await upload(file,id,targetId,batchId);
       }catch(error){
         for(const {id} of batch){const local=localUploads.get(id);if(local){local.status='error';local.error=error.message;}}
-        showError(error.message);renderUploads();
+        showError('Upload not started. See the file below for details.');renderUploads();
       }finally{send({type:'uploadBatchEnd',id:batchId});}
     });
     renderUploads();
@@ -595,7 +595,7 @@
     if(values.some(s=>/^\/[^/]+$/.test(s)&&!/[.][a-z0-9]{1,12}$/i.test(s)))return []; // Keep slash commands such as /resume as text.
     return values;
   }
-  function importPaths(paths){localError='';flushEdit();send({type:'importLocalFiles',paths,targetId:state.draft?.targetId});status('Copying files to the remote inbox…');}
+  function importPaths(paths){localError='';flushEdit();send({type:'importLocalFiles',paths,targetId:targetSelect.value||state.draft?.targetId});status('Copying files to the remote inbox…');}
   function acceptDrag(event) {
     event.preventDefault();
     event.stopPropagation();

@@ -988,3 +988,31 @@ test('path uploads use the local helper and attach remote bytes while retaining 
  await view.send({type:'importLocalFiles',paths:[path.join(env.project,'notes.html')],targetId:'$1'});
  assert.equal(lastState(view).draft.attachments.at(-1).path,path.join(env.project,'notes.html'),'existing remote paths remain usable');
 });
+
+test('uploads retry unresolved project roots and distinguish folder failures from recipient changes',async t=>{
+ const original=core.project;let fail=true;
+ core.project=async cwd=>{if(fail)throw Error('temporary lookup failure');return original(cwd);};t.after(()=>{core.project=original;});
+ const env=await start(t);const view=await openSidebar(env);await settle(view);
+ assert.equal(lastState(view).draft.targetId,'$1');assert.equal(lastState(view).draft.root,undefined);
+ await view.send({type:'uploadBatchStart',id:'missing-root',targetId:'$1'});
+ const failure=view.posted.find(m=>m.type==='uploadError'&&m.id==='missing-root');assert.match(failure.error,/Cannot find a Git project/);assert.doesNotMatch(failure.error,/recipient changed/);
+ fail=false;
+ await view.send({type:'uploadBatchStart',id:'retry-root',targetId:'$1'});
+ assert.ok(view.posted.some(m=>m.type==='uploadBatchReady'&&m.id==='retry-root'));
+ await view.send({type:'uploadStart',id:'retry-file',batchId:'retry-root',targetId:'$1',name:'report.html',size:0});
+ await view.send({type:'uploadFinish',id:'retry-file'});
+ assert.ok(view.posted.some(m=>m.type==='uploadComplete'&&m.id==='retry-file'));
+ await view.send({type:'uploadBatchEnd',id:'retry-root'});
+ await view.send({type:'uploadBatchStart',id:'wrong-recipient',targetId:'$2'});
+ assert.match(view.posted.find(m=>m.type==='uploadError'&&m.id==='wrong-recipient').error,/recipient changed/);
+});
+
+test('retrying a missing upload folder preserves a manually chosen recipient',async t=>{
+ const original=core.project;let fail=false;
+ core.project=async cwd=>{if(fail)throw Error('temporary lookup failure');return original(cwd);};t.after(()=>{core.project=original;});
+ const env=await start(t,{sessions:p=>[session(p),session(p,{id:'$2',sessionName:'claude-second',name:'Second'})]});
+ const view=await openSidebar(env);await settle(view);fail=true;
+ await view.send({type:'changeTarget',targetId:'$2'});assert.equal(lastState(view).draft.root,undefined);
+ fail=false;await env.log.commands.get('agentGlue.refreshResources')();await settle(view);
+ assert.equal(lastState(view).draft.targetId,'$2');assert.equal(lastState(view).draft.root,env.project);
+});

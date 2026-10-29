@@ -95,14 +95,24 @@ function activate(context){
     else appsPanel.reveal(await mainEditorColumn(vscode));
     await apps.refresh(await core.sessions(),true);renderAppsPanel();
   }
+  async function attachmentRecipient(targetId){
+    if(!targetId)throw Error('Choose an agent in the recipient list before attaching files.');
+    if(targetId!==draft.targetId)throw Error('The draft recipient changed. Choose the files again for the intended recipient.');
+    let target=byId(targetId);
+    if(!target){await refresh();target=byId(targetId);}
+    if(!target)throw Error('The chosen agent session is no longer available. Choose another recipient.');
+    const root=draft.root||await core.project(target.cwd).catch(()=>undefined);
+    if(!root)throw Error('Cannot find a Git project for '+target.name+'. Open the agent in its project folder and try again.');
+    if(targetId!==draft.targetId)throw Error('The draft recipient changed. Choose the files again for the intended recipient.');
+    draft.root=root;return {targetId,root};
+  }
   async function importLocalFiles(message){
     if(!Array.isArray(message.paths)||!message.paths.length||message.paths.length>20||message.paths.some(p=>typeof p!=='string'||p.length>4096))throw Error('Drop or paste up to 20 local file paths.');
     if(uploadBusy())throw Error('Wait for the current upload to finish.');
     clipboardBusy=true;
     try{
       await refresh();
-      if(!draft.targetId||!draft.root||message.targetId!==draft.targetId)throw Error('The recipient changed. Select the intended terminal and try again.');
-      const targetId=draft.targetId,root=draft.root;
+      const {targetId,root}=await attachmentRecipient(message.targetId);
       await ensureDictation('localFiles');
       for(const localPath of message.paths){
         let file;
@@ -233,10 +243,11 @@ function activate(context){
         if(vscode.window.activeTerminal!==activeTerminal){refreshAgain=true;return;}
         if(!cleared.has(session.id))files[session.id]=core.observe(previousFiles,existing);
       }
-      if(session&&!uploadBusy()&&(!draft.targetId||followTarget)){
-        const root=await core.project(session.cwd).catch(()=>undefined);
+      if(session&&!uploadBusy()&&(!draft.targetId||!draft.root||followTarget)){
+        const recipient=(!draft.targetId||followTarget)?session:byId(draft.targetId);
+        const root=recipient?await core.project(recipient.cwd).catch(()=>undefined):undefined;
         // Project lookup can overlap a new upload or terminal switch.
-        if(!uploadBusy()&&vscode.window.activeTerminal===activeTerminal){draft.targetId=session.id;draft.targetName=session.name;draft.root=root;followTarget=false;}
+        if(recipient&&!uploadBusy()&&vscode.window.activeTerminal===activeTerminal){draft.targetId=recipient.id;draft.targetName=recipient.name;draft.root=root;followTarget=false;}
       }
       if(sidebar?.visible)loadResources();
       if(sidebar?.visible||appsPanel?.visible)void apps.refresh(sessionList).then(()=>{renderAppsPanel();publish();}).catch(error=>{status='Web apps: '+error.message;publish();});
@@ -326,8 +337,10 @@ function activate(context){
       try{
         if(message.type==='uploadBatchStart'){
           if(!/^[a-zA-Z0-9-]{1,80}$/.test(message.id)||uploadBatches.has(view))throw new Error('An attachment batch is already active.');
-          if(!draft.root||!byId(draft.targetId)||message.targetId!==draft.targetId)throw new Error('The draft recipient changed. Choose the files again for the intended recipient.');
-          uploadBatches.set(view,{id:message.id,targetId:draft.targetId,root:draft.root,ids:new Set(),lastActivity:Date.now()});
+          const batch={id:message.id,targetId:message.targetId,ids:new Set(),lastActivity:Date.now()};
+          uploadBatches.set(view,batch); // Freeze recipient while its project lookup is pending.
+          try{Object.assign(batch,await attachmentRecipient(message.targetId));}
+          catch(error){uploadBatches.delete(view);throw error;}
           await view.postMessage({type:'uploadBatchReady',id:message.id});
         }else if(message.type==='uploadBatchEnd'){
           const batch=uploadBatches.get(view);
