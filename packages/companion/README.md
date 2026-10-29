@@ -26,7 +26,10 @@ See the [setup guide](https://github.com/knotwerk/agent-glue#readme).
   this terminal and all terminals. Expand to see filenames or page paths beside
   links; use **All** for the cross-terminal list. Links use VS Code SSH forwarding. Right-click for browser
   and copy-link actions.
-- **Attachments**: drop files or paste screenshots (up to 25 MB each). They are
+- **Attachments**: drop files (including HTML), paste screenshots, or paste
+  absolute local file paths into the note (up to 25 MB per upload). Path-only
+  drops and pasted paths use the local helper to copy files to the SSH host.
+  Quoted paths with spaces and file URLs are supported. They are
   stored in the Git-ignored `.local/agent-glue/inbox/` of the agent's project,
   and their paths are added to your draft.
 - **Draft and dictation**: write a note (macOS Dictation works in the field),

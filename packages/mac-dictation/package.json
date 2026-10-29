@@ -2,7 +2,7 @@
   "name": "agent-glue-mac-dictation",
   "displayName": "Agent Glue Mac Dictation",
   "description": "Local macOS Dictation control for Agent Glue",
-  "version": "0.1.56",
+  "version": "0.1.57",
   "publisher": "knotwerk",
   "engines": {
     "vscode": "^1.100.0"
@@ -39,7 +39,19 @@
       {
         "command": "agentGlueMac.downloadFile",
         "title": "Agent Glue: Download File to Computer"
+      },
+      {
+        "command": "agentGlueMac.readLocalFile",
+        "title": "Agent Glue: Read Local Attachment"
       }
-    ]
+    ],
+    "menus": {
+      "commandPalette": [
+        {
+          "command": "agentGlueMac.readLocalFile",
+          "when": "false"
+        }
+      ]
+    }
   }
 }

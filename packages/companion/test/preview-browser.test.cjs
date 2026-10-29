@@ -142,6 +142,18 @@ test('browser: screenshot drops upload and Clear text preserves recipient and at
   await page.evaluate(()=>new Promise(requestAnimationFrame));
   assert.equal(await page.evaluate(()=>window.sent.filter(m=>m.type==='dictate').length),dictationCount+1);
 
+  await page.evaluate(()=>{
+    const data=new DataTransfer();data.setData('text/uri-list','file:///Users/example/review%20two.html');
+    document.dispatchEvent(new DragEvent('drop',{bubbles:true,cancelable:true,dataTransfer:data}));
+    const clipboard=new DataTransfer();clipboard.setData('text/plain','"/Users/example/another review.html"');
+    document.querySelector('#draft-text').dispatchEvent(new ClipboardEvent('paste',{bubbles:true,cancelable:true,clipboardData:clipboard}));
+    const html=new DataTransfer();html.items.add(new File(['<html>Review</html>'],'report.html',{type:'text/html'}));
+    document.dispatchEvent(new DragEvent('drop',{bubbles:true,cancelable:true,dataTransfer:html}));
+  });
+  await page.waitForFunction(()=>window.sent.some(m=>m.type==='uploadStart'&&m.name==='report.html'));
+  assert.deepEqual(await page.evaluate(()=>window.sent.filter(m=>m.type==='importLocalFiles').map(m=>m.paths)),[['file:///Users/example/review%20two.html'],['/Users/example/another review.html']]);
+  assert.equal(await page.evaluate(()=>{const data=new DataTransfer();data.setData('text/plain','Please review /Users/example/file.html');return document.querySelector('#draft-text').dispatchEvent(new ClipboardEvent('paste',{bubbles:true,cancelable:true,clipboardData:data}));}),true,'ordinary prose is not consumed');
+  assert.equal(await page.evaluate(()=>{const data=new DataTransfer();data.setData('text/plain','/resume');return document.querySelector('#draft-text').dispatchEvent(new ClipboardEvent('paste',{bubbles:true,cancelable:true,clipboardData:data}));}),true,'slash commands remain ordinary text');
   assert.equal(await page.evaluate(()=>document.activeElement.id),'draft-text');
   await page.locator('#target').focus();
   await page.evaluate(()=>window.dispatchEvent(new MessageEvent('message',{data:{type:'dictationReady',id:'focus-test'}})));
@@ -183,7 +195,7 @@ test('browser: screenshot drops upload and Clear text preserves recipient and at
   await page.waitForFunction(()=>window.sent.some(m=>m.type==='uploadFinish'));
   assert.ok(await page.evaluate(()=>window.sent.some(m=>m.type==='uploadStart'&&m.name==='shot.png')));
   await page.evaluate(()=>document.getElementById('drop-zone').dispatchEvent(new DragEvent('drop',{dataTransfer:new DataTransfer(),bubbles:true,cancelable:true})));
-  assert.match(await page.locator('#status').textContent(),/did not include an image file/);
+  assert.match(await page.locator('#status').textContent(),/No readable files were included/);
   assert.deepEqual(errors,[]);
 });
 

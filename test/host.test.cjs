@@ -969,3 +969,22 @@ test('terminal status switches between terminals in the same project without lea
  await waitFor(view,()=>lastState(view).resourceItems[0]?.label==='Work for $2','second status in same folder');
  assert.equal(lastState(view).resourceItems.length,1);
 });
+
+test('path uploads use the local helper and attach remote bytes while retaining the original recipient',async t=>{
+ const env=await start(t);const view=await openSidebar(env);await settle(view);
+ const bytes=Buffer.from('<html>local review</html>'),execute=env.vscode.commands.executeCommand;
+ env.vscode.commands.executeCommand=async(cmd,...args)=>{
+  if(cmd==='agentGlueMac.status')return {platform:'linux',safeNativeErrors:true,localFiles:true};
+  if(cmd==='agentGlueMac.readLocalFile'){assert.equal(args[0],'/Users/example/review.html');env.vscode.window.activeTerminal={name:'unrelated'};env.log.activeTerminalChanged(env.vscode.window.activeTerminal);return {name:'review.html',data:bytes.toString('base64'),size:bytes.length};}
+  return execute(cmd,...args);
+ };
+ await view.send({type:'importLocalFiles',paths:['/Users/example/review.html'],targetId:'$1'});
+ const attached=lastState(view).draft.attachments.at(-1);assert.ok(attached,JSON.stringify(lastState(view)));
+ assert.ok(attached.path.startsWith(path.join(env.project,'.local/agent-glue/inbox/')));
+ assert.deepEqual(fs.readFileSync(attached.path),bytes);
+ await view.send({type:'importLocalFiles',paths:['/Users/example/review.html'],targetId:'different-session'});
+ assert.equal(lastState(view).draft.attachments.length,1);assert.match(lastState(view).status,/recipient changed/);
+ env.vscode.commands.executeCommand=async(cmd,...args)=>{if(cmd==='agentGlueMac.readLocalFile')throw Error('ENOENT: no local file');if(cmd==='agentGlueMac.status')return {platform:'linux',localFiles:true};return execute(cmd,...args);};
+ await view.send({type:'importLocalFiles',paths:[path.join(env.project,'notes.html')],targetId:'$1'});
+ assert.equal(lastState(view).draft.attachments.at(-1).path,path.join(env.project,'notes.html'),'existing remote paths remain usable');
+});

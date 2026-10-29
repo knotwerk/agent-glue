@@ -38,7 +38,7 @@ function activate(context){
     try{
       const info=await vscode.commands.executeCommand('agentGlueMac.status');
       if(!info)return false;
-      if(capability!=='nativeDownload'&&info.platform!=='darwin')throw new Error('Dictation helper is running on the wrong host; it must run locally on the Mac.');
+      if(!['nativeDownload','localFiles'].includes(capability)&&info.platform!=='darwin')throw new Error('Dictation helper is running on the wrong host; it must run locally on the Mac.');
       if(info.version&&info.safeNativeErrors!==true)return false;
       return !capability||info[capability]===true;
     }catch(error){
@@ -49,7 +49,7 @@ function activate(context){
   async function ensureDictation(capability){
     if(await probeDictation(capability))return;
     if(!helperSetup)helperSetup=(async()=>{
-      status=capability==='nativeDownload'?'Setting up native downloads…':'Setting up macOS Dictation…';publish();
+      status=capability==='localFiles'?'Setting up local file uploads…':capability==='nativeDownload'?'Setting up native downloads…':'Setting up macOS Dictation…';publish();
       const helper=vscode.Uri.joinPath(context.extensionUri,'dist','mac-dictation.vsix');
       await vscode.commands.executeCommand('workbench.extensions.installExtension',helper);
       // Installing a VSIX can finish before its local host registers commands.
@@ -94,6 +94,37 @@ function activate(context){
     if(!appsPanel){appsPanel=vscode.window.createWebviewPanel('agentGlue.webApps','Agent Glue — Web apps',await mainEditorColumn(vscode),{enableScripts:true});appsPanel.onDidDispose(()=>{appsPanel=undefined;appsSignature=undefined;});appsPanel.webview.onDidReceiveMessage(m=>appAction(m.id,m.action).catch(e=>vscode.window.showErrorMessage(e.message)));}
     else appsPanel.reveal(await mainEditorColumn(vscode));
     await apps.refresh(await core.sessions(),true);renderAppsPanel();
+  }
+  async function importLocalFiles(message){
+    if(!Array.isArray(message.paths)||!message.paths.length||message.paths.length>20||message.paths.some(p=>typeof p!=='string'||p.length>4096))throw Error('Drop or paste up to 20 local file paths.');
+    if(uploadBusy())throw Error('Wait for the current upload to finish.');
+    clipboardBusy=true;
+    try{
+      await refresh();
+      if(!draft.targetId||!draft.root||message.targetId!==draft.targetId)throw Error('The recipient changed. Select the intended terminal and try again.');
+      const targetId=draft.targetId,root=draft.root;
+      await ensureDictation('localFiles');
+      for(const localPath of message.paths){
+        let file;
+        try{file=await vscode.commands.executeCommand('agentGlueMac.readLocalFile',localPath);}
+        catch(error){
+          // A pasted path may already refer to a file on the SSH host.
+          const remote=path.isAbsolute(localPath)&&/ENOENT/.test(error.message||'')?await fs.stat(localPath).catch(()=>undefined):undefined;
+          if(!remote?.isFile())throw error;
+          draft.attachments.push({name:path.basename(localPath),path:localPath,size:remote.size,targetId});await save();publish();continue;
+        }
+        if(!file||typeof file.data!=='string'||!Number.isSafeInteger(file.size)||file.size<0||file.size>25*1024*1024||file.data.length>36*1024*1024)throw Error('The local helper did not return a valid file. Reload and retry.');
+        const bytes=Buffer.from(file.data,'base64');if(bytes.length!==file.size||bytes.toString('base64')!==file.data)throw Error('The local file transfer was incomplete. Try again.');
+        const id=crypto.randomUUID();
+        try{
+          status='Uploading '+file.name+'…';publish();
+          await uploads.start({id,name:file.name,size:bytes.length,mime:'application/octet-stream'},root,targetId);
+          for(let offset=0;offset<bytes.length;offset+=192*1024)await uploads.chunk({id,offset,data:bytes.subarray(offset,offset+192*1024).toString('base64')});
+          draft.attachments.push(await uploads.finish(id));await save();publish();
+        }catch(error){await uploads.abort(id);throw error;}
+      }
+      status='Files attached with remote paths.';
+    }finally{clipboardBusy=false;}
   }
   async function runStatus(){
     if(statusRunBusy)return;
@@ -402,6 +433,7 @@ function activate(context){
       }
       case 'copyDraft':if(typeof message.text==='string')draft.text=message.text;await vscode.env.clipboard.writeText(core.draftText(draft));status='Draft copied.';break;
       case 'pasteDraft':if(typeof message.text==='string')draft.text=message.text;core.paste(await terminal(draft.targetId),draft);status='Draft pasted. Press Enter in the terminal to send.';break;
+      case 'importLocalFiles':await importLocalFiles(message);break;
       case 'pasteClipboardImage':{
         if(!draft.targetId||!draft.root||!byId(draft.targetId))throw new Error('Select an agent in a Git project before attaching an image.');
         clipboardBusy=true;

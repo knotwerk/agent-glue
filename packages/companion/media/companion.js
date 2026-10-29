@@ -586,6 +586,16 @@
   dropZone.addEventListener('keydown', event => {
     if ((event.key === 'Enter' || event.key === ' ') && event.target === dropZone) { event.preventDefault(); fileInput.click(); }
   });
+  function localPaths(transfer){
+    let values;
+    try{const code=transfer?.getData('CodeFiles');if(code)values=JSON.parse(code);}catch{}
+    if(!Array.isArray(values))values=(transfer?.getData('text/uri-list')||transfer?.getData('text/plain')||'').split(/\r?\n/).map(s=>s.trim()).filter(s=>s&&!s.startsWith('#'));
+    values=values.map(s=>typeof s==='string'?s.replace(/^(["'])(.*)\1$/,'$2'):s);
+    if(!values.length||values.length>20||values.some(s=>typeof s!=='string'||s.length>4096||!(/^(?:file:\/\/\/(?:[^\s]| )+|\/[^\r\n]+|~\/[^\r\n]+|[A-Za-z]:[\\/][^\r\n]+)$/.test(s))))return [];
+    if(values.some(s=>/^\/[^/]+$/.test(s)&&!/[.][a-z0-9]{1,12}$/i.test(s)))return []; // Keep slash commands such as /resume as text.
+    return values;
+  }
+  function importPaths(paths){localError='';flushEdit();send({type:'importLocalFiles',paths,targetId:state.draft?.targetId});status('Copying files to the remote inbox…');}
   function acceptDrag(event) {
     event.preventDefault();
     event.stopPropagation();
@@ -603,11 +613,12 @@
     let files = [...(transfer?.files || [])];
     if (!files.length) files = [...(transfer?.items || [])].filter(item => item.kind === 'file').map(item => item.getAsFile()).filter(Boolean);
     if (files.length) enqueueFiles(files);
-    else showError('This drag did not include an image file. Save the screenshot, then drop the saved file or paste the image here.');
+    else{const paths=localPaths(transfer);if(paths.length)importPaths(paths);else showError('No readable files were included. Drop a saved file, paste its absolute path, or use Choose files.');}
   }, true);
   document.addEventListener('paste', event => {
     const files = [...(event.clipboardData?.items || [])].filter(item => item.kind === 'file').map(item => item.getAsFile()).filter(Boolean);
     if (files.length) { event.preventDefault(); enqueueFiles(files); }
+    else if(event.target===textField||dropZone.contains(event.target)){const paths=localPaths(event.clipboardData);if(paths.length){event.preventDefault();importPaths(paths);}}
   });
 
   window.addEventListener('message', event => {

@@ -74,11 +74,30 @@ async function downloadFile(vscode,source){
   await vscode.window.withProgress({location:vscode.ProgressLocation.Notification,title:'Downloading '+name},()=>vscode.workspace.fs.copy(source,target,{overwrite:true}));
   return {cancelled:false};
 }
+async function readLocalFile(value){
+  const fs=require('node:fs/promises'),path=require('node:path');
+  if(typeof value!=='string'||value.length>4096)throw Error('Choose a local file path.');
+  let file=value;
+  if(/^file:/i.test(file))file=require('node:url').fileURLToPath(file);
+  else if(file.startsWith('~/'))file=path.join(require('node:os').homedir(),file.slice(2));
+  if(!path.isAbsolute(file))throw Error('Choose an absolute path on your computer.');
+  const {constants}=require('node:fs');
+  const handle=await fs.open(file,constants.O_RDONLY|constants.O_NONBLOCK);
+  try{
+    const stat=await handle.stat();if(!stat.isFile())throw Error('Choose a file, not a folder.');
+    if(stat.size>25*1024*1024)throw Error('Files must be 25 MB or smaller.');
+    const buffer=Buffer.alloc(stat.size+1);let offset=0;
+    while(offset<buffer.length){const {bytesRead}=await handle.read(buffer,offset,buffer.length-offset,offset);if(!bytesRead)break;offset+=bytesRead;}
+    if(offset!==stat.size)throw Error('The file changed while uploading. Try again.');
+    return {name:path.basename(file),size:offset,data:buffer.subarray(0,offset).toString('base64')};
+  }finally{await handle.close();}
+}
 function activate(context){
   const vscode=require('vscode');
-  context.subscriptions.push(vscode.commands.registerCommand('agentGlueMac.status',()=>({platform:process.platform,version:require('./package.json').version,clipboardImage:true,safeNativeErrors:true,nativeDownload:true})));
+  context.subscriptions.push(vscode.commands.registerCommand('agentGlueMac.status',()=>({platform:process.platform,version:require('./package.json').version,clipboardImage:true,safeNativeErrors:true,nativeDownload:true,localFiles:true})));
+  context.subscriptions.push(vscode.commands.registerCommand('agentGlueMac.readLocalFile',value=>readLocalFile(value)));
   context.subscriptions.push(vscode.commands.registerCommand('agentGlueMac.downloadFile',source=>downloadFile(vscode,source)));
   context.subscriptions.push(vscode.commands.registerCommand('agentGlueMac.readClipboardImage',()=>readClipboardImage()));
   context.subscriptions.push(vscode.commands.registerCommand('agentGlueMac.startDictation',()=>start()));
 }
-module.exports={downloadFile,activate,start,SCRIPT,readClipboardImage,CLIPBOARD_SCRIPT};
+module.exports={readLocalFile,downloadFile,activate,start,SCRIPT,readClipboardImage,CLIPBOARD_SCRIPT};

@@ -54,3 +54,16 @@ test('native downloads copy the exact remote URI outside the workspace to a loca
   await assert.rejects(downloadFile(vscode,uri('https','/file')),/local or SSH/);
   vscode.workspace.fs.stat=async()=>({type:2});await assert.rejects(downloadFile(vscode,source),/regular file/);
 });
+
+test('local file uploads read HTML and file URLs byte-for-byte and reject folders and oversized files',async()=>{
+ const {readLocalFile}=require('../extension.js');const fs=require('node:fs/promises'),path=require('node:path');
+ const {tempDir}=require('../../../test/support/tmp.cjs');const dir=tempDir('local-upload'),file=path.join(dir,'review two.html');
+ const bytes=Buffer.from('<!doctype html><p>Review ✓</p>');await fs.writeFile(file,bytes);
+ for(const source of [file,require('node:url').pathToFileURL(file).href]){
+  const result=await readLocalFile(source);assert.equal(result.name,'review two.html');assert.equal(result.size,bytes.length);assert.deepEqual(Buffer.from(result.data,'base64'),bytes);
+ }
+ await assert.rejects(readLocalFile(dir),/not a folder/);
+ await assert.rejects(readLocalFile('relative.html'),/absolute path/);
+ await assert.rejects(readLocalFile('https://example.com/file.html'),/absolute path/);
+ const large=path.join(dir,'large.html');await fs.writeFile(large,'');await fs.truncate(large,25*1024*1024+1);await assert.rejects(readLocalFile(large),/25 MB/);
+});
