@@ -11,7 +11,7 @@
   let state = { sessions: [], files: [], draft: {}, uploads: [] };
   let draftId;
   const expandedReviews=new Set(),requestedReviews=new Set();
-  const closedReviewNodes=new Set(),expandedTasks=new Set();
+  const closedReviewNodes=new Set(),closedTasks=new Set();
   let reviewFolder;
   let recentSession, recentLimit=20;
   const sessionFileOptions={...vscode.getState?.()?.sessionFileOptions};
@@ -174,8 +174,8 @@
       const key=branch.firstElementChild?.dataset.reviewKey;
       if(key){if(branch.open)closedReviewNodes.delete(key);else closedReviewNodes.add(key);}
     }
-    for(const row of container.querySelectorAll('.task-item')){if(row.open)expandedTasks.add(row.dataset.taskKey);else expandedTasks.delete(row.dataset.taskKey);}
-    if(reviewFolder!==state.resourceFolder){expandedTasks.clear();requestedReviews.clear();expandedReviews.clear();closedReviewNodes.clear();reviewFolder=state.resourceFolder;}
+    for(const row of container.querySelectorAll('.task-item')){if(row.open)closedTasks.delete(row.dataset.taskKey);else closedTasks.add(row.dataset.taskKey);}
+    if(reviewFolder!==state.resourceFolder){closedTasks.clear();requestedReviews.clear();expandedReviews.clear();closedReviewNodes.clear();reviewFolder=state.resourceFolder;}
     if(reviewGeneration!==state.resourceGeneration){requestedReviews.clear();reviewGeneration=state.resourceGeneration;}
     for(const item of state.resourceItems||[])if(item.reviewDocuments||item.reviewError)requestedReviews.delete(item.id);
     byId('task-controls').hidden=tab!=='tasks';
@@ -194,11 +194,11 @@
     byId('pr-filter').title=byId('pr-filter').selectedOptions[0]?.textContent||'Filter pull requests';
     container.setAttribute('aria-label',tab==='prs'?'Pull requests':'Pinned and recent files');
     if(tab==='tasks'){
-      container.setAttribute('aria-label','Project tasks');
+      container.setAttribute('aria-label','Selected terminal status');
       const filter=byId('task-filter').value;
       const items=(state.resourceItems||[]).filter(task=>filter==='all'||(filter==='done'?task.status==='done':task.status!=='done'));
       for(const task of items){
-        const row=element('details','task-item');row.dataset.taskKey=task.id;row.open=expandedTasks.has(task.id);
+        const row=element('details','task-item');row.dataset.taskKey=(state.selectedSessionId||'')+':'+task.id;row.open=!closedTasks.has(row.dataset.taskKey);
         const title=element('summary');
         const status=element('span','task-status task-'+task.status,{active:'●',blocked:'!',review:'◉',done:'✓'}[task.status]||'○');
         status.title=task.status;status.setAttribute('aria-label',task.status);
@@ -206,13 +206,17 @@
         const updated=element('time','task-updated',relativeTime(task.updatedAt));
         updated.dateTime=task.updatedAt;updated.title='Last updated: '+new Date(task.updatedAt).toLocaleString();
         title.append(updated);row.append(title);
-        row.append(element('p','task-meta',[task.status,task.owner].filter(Boolean).join(' · ')));
+        row.append(element('p','task-meta',['Reported '+task.status,task.owner].filter(Boolean).join(' · ')));
+        if(task.request)row.append(element('p','task-description','Your request: '+task.request));
         if(task.summary)row.append(element('p','task-description',task.summary));
         if(task.next)row.append(element('p','task-description','Next: '+task.next));
+        if(task.files?.length)row.append(element('p','task-description','Files: '+task.files.join(', ')));
+        if(task.agents?.length)row.append(element('p','task-description','Agents (reported): '+task.agents.join('; ')));
+        if(Number.isSafeInteger(task.tokens))row.append(element('p','task-meta','Tokens (agent-reported): '+task.tokens.toLocaleString()));
         fragment.append(row);
       }
       container.replaceChildren(fragment);
-      byId('files-empty').textContent=state.resourceStatus||(items.length?'':(state.resourceItems||[]).length?'No tasks match this filter.':'No tracked tasks in this project. Click Set up with agent to paste a task-tracking request into the selected terminal, then press Enter.');
+      byId('files-empty').textContent=state.resourceStatus||(items.length?'':(state.resourceItems||[]).length?'No reported work matches this filter.':'No status reported for this terminal yet. Ask agent to update prepares a request for you to send. Refresh only reads saved reports and uses no tokens.');
       byId('files-empty').hidden=items.length>0&&!state.resourceStatus;
       return;
     }

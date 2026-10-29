@@ -264,24 +264,28 @@ test('browser: resource icons, PR filters and local PR document links work witho
   assert.equal(await page.locator('.file-item').count(),2);
   assert.equal(await page.locator('#file-filter-notice').isVisible(),false);
   const taskState={resourceTab:'tasks',resourceFolder:'/synthetic',files:[],draft:{},resourceItems:[
-    {id:'a',label:'Active work',status:'active',owner:'claude-test',summary:'<script>unsafe()</script>',next:'Run tests',updatedAt:new Date(Date.now()-5*60000).toISOString()},
+    {id:'a',label:'Active work',status:'active',owner:'claude-test',summary:'<script>unsafe()</script>',files:['src/example.js'],agents:['checker: done'],tokens:1200,next:'Run tests',updatedAt:new Date(Date.now()-5*60000).toISOString()},
     {id:'d',label:'Finished work',status:'done',updatedAt:'2026-10-21T11:00:00Z'}
   ]};
   await setState(taskState);
+  await page.getByLabel('Filter terminal status').selectOption('active');
   assert.equal(await page.locator('.task-item').count(),1);
   assert.equal(await page.locator('.task-updated').textContent(),'5 min ago');
   assert.equal(await page.locator('.task-updated').getAttribute('datetime'),taskState.resourceItems[0].updatedAt);
   assert.match(await page.locator('.task-updated').getAttribute('title'),/^Last updated: /);
   assert.equal(await page.locator('#file-controls').isVisible(),false);
+  assert.equal(await page.locator('.task-item').getAttribute('open'),'');
+  assert.match(await page.locator('.task-item').textContent(),/Files: src\/example.js/);
+  assert.match(await page.locator('.task-item').textContent(),/Tokens \(agent-reported\): 1,200/);
   await page.locator('.task-item summary').click();
   assert.equal(await page.locator('.task-description').first().textContent(),'<script>unsafe()</script>');
   await setState(taskState);
-  assert.equal(await page.locator('.task-item').getAttribute('open'),'');
-  await page.getByLabel('Filter tasks').selectOption('done');
+  assert.equal(await page.locator('.task-item').getAttribute('open'),null);
+  await page.getByLabel('Filter terminal status').selectOption('done');
   assert.equal(await page.locator('.task-item .item-label').textContent(),'Finished work');
-  await page.getByLabel('Filter tasks').selectOption('all');
+  await page.getByLabel('Filter terminal status').selectOption('all');
   assert.equal(await page.locator('.task-item').count(),2);
-  await page.getByRole('button',{name:'Set up with agent',exact:true}).click();
+  await page.getByRole('button',{name:'Ask agent to update',exact:true}).click();
   assert.ok(await page.evaluate(()=>window.sent.some(m=>m.type==='setupTasks')));
   await setState({resourceTab:'prs',prFilter:'priority',resourceItems:[{id:'pr',url:'https://github.com/a/b/pull/3',label:'#3 Example',newComments:true}],draft:{}});
   assert.equal(await page.locator('#resource-controls').isVisible(),true);

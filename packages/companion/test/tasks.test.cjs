@@ -30,3 +30,23 @@ test('tasks handles missing folders and refuses symlink directories and records'
  const linked=tempDir('tasks-linked');await fs.symlink(path.join(root,'.local'),path.join(linked,'.local'));
  await assert.rejects(read(linked),/real project directory/);
 });
+
+test('terminal status isolates session identities, sorts updates and validates optional reports',async()=>{
+ const root=tempDir('terminal-status'),dir=path.join(root,'.local/agent-glue/tasks');await fs.mkdir(dir,{recursive:true});
+ const first={id:'500:$1:100',sessionName:'claude-first'},second={id:'500:$2:101',sessionName:'claude-second'};
+ const records={
+  first:{...task,sessionId:first.id,request:'Fix the filters',files:['src/filters.js'],agents:['reviewer: checking'],tokens:1234},
+  done:{...task,sessionId:first.id,status:'done',updatedAt:'2026-10-21T13:00:00Z'},
+  second:{...task,sessionId:second.id},
+  reused:{...task,sessionId:'500:$1:99',owner:first.sessionName},
+  legacy:{...task,owner:first.sessionName},
+  unknown:{...task},
+  invalid:{...task,sessionId:first.id,tokens:-1}
+ };
+ for(const [name,record] of Object.entries(records))await fs.writeFile(path.join(dir,name+'.json'),JSON.stringify(record));
+ const result=await list('tasks',root,{project:async()=>root,session:first});
+ assert.deepEqual(result.items.map(r=>r.id),['task:done.json','task:first.json','task:legacy.json']);
+ assert.equal(result.items[1].request,'Fix the filters');assert.deepEqual(result.items[1].files,['src/filters.js']);assert.equal(result.items[1].tokens,1234);
+ assert.equal(result.items[0].tokens,undefined);assert.match(result.warning,/1 task/);
+ assert.deepEqual((await read(root,{session:second})).items.map(r=>r.id),['task:second.json']);
+});

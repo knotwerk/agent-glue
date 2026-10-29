@@ -543,6 +543,7 @@ test('native view title commands switch resource tabs and expose file actions in
   resources.list=async()=>({root:'/synthetic',items:[]});t.after(()=>{resources.list=original;});
   const env=await start(t);const view=await openSidebar(env);
   const menu=manifest.contributes.menus['view/title'];
+  assert.deepEqual(menu.filter(m=>m.group.startsWith('navigation')).map(m=>m.command),['agentGlue.showfiles','agentGlue.showprs','agentGlue.refreshResources']);
   for(const tab of ['prs','files']){
     assert.ok(menu.some(m=>m.command==='agentGlue.show'+tab&&m.group.startsWith('navigation')));
     await env.log.commands.get('agentGlue.show'+tab)();await settle(view);
@@ -870,12 +871,12 @@ test('Tasks command reads the selected project and refreshes agent progress inde
  const env=await start(t);const view=await openSidebar(env);await settle(view);
  const directory=path.join(env.project,'.local/agent-glue/tasks');fs.mkdirSync(directory,{recursive:true});
  const file=path.join(directory,'work.json');
- fs.writeFileSync(file,JSON.stringify({title:'Ship task view',status:'active',updatedAt:'2026-10-21T12:00:00Z'}));
+ fs.writeFileSync(file,JSON.stringify({title:'Ship task view',sessionId:'$1',status:'active',updatedAt:'2026-10-21T12:00:00Z'}));
  await env.log.commands.get('agentGlue.showtasks')();
  await waitFor(view,()=>lastState(view).resourceItems.length===1,'Task list');
  assert.equal(lastState(view).resourceTab,'tasks');assert.equal(lastState(view).resourceItems[0].status,'active');
  assert.equal(lastState(view).resourceFolder,env.project);
- fs.writeFileSync(file,JSON.stringify({title:'Ship task view',status:'done',updatedAt:'2026-10-21T13:00:00Z'}));
+ fs.writeFileSync(file,JSON.stringify({title:'Ship task view',sessionId:'$1',status:'done',updatedAt:'2026-10-21T13:00:00Z'}));
  await view.send({type:'refresh'});
  await waitFor(view,()=>lastState(view).resourceItems[0]?.status==='done','Task update');
  await env.log.commands.get('agentGlue.showfiles')();
@@ -890,8 +891,8 @@ test('task setup pastes trusted instructions into the selected terminal without 
  const view=await openSidebar(env);await settle(view);
  await view.send({type:'editDraft',text:'Keep my note'});
  await view.send({type:'setupTasks',text:'untrusted'});
- const {taskSetupPrompt}=require('../packages/companion/src/instructions.cjs');
- assert.deepEqual(sent,[['\x1b[200~'+taskSetupPrompt+'\x1b[201~',false]]);
+ const {terminalStatusPrompt}=require('../packages/companion/src/instructions.cjs');
+ assert.deepEqual(sent,[['\x1b[200~'+terminalStatusPrompt(session(env.project))+'\x1b[201~',false]]);
  assert.equal(lastState(view).draft.text,'Keep my note');
  assert.equal(fs.existsSync(path.join(env.project,'CLAUDE.md')),false);
  assert.match(lastState(view).status,/Press Enter/);
@@ -918,8 +919,43 @@ test('fork folder prompt freezes its source and duplicate clicks do not create d
  const forks=[];const env=await start(t,{sessionsApi:{sessionForTerminal:()=>undefined,forkSession:async(...args)=>forks.push(args)}});await openSidebar(env);
  let input,accept,hide;env.vscode.ThemeIcon=class{constructor(id){this.id=id;}};
  env.vscode.window.createInputBox=()=>input={onDidHide:fn=>{hide=fn;},onDidTriggerButton(){},onDidAccept:fn=>{accept=fn;},show(){},dispose(){hide?.();}};
+ env.vscode.window.activeTerminal={name:'Fix bug'};
  const first=env.log.commands.get('agentGlue.fork')();await new Promise(r=>setImmediate(r));
  assert.equal(input.value,env.project);await env.log.commands.get('agentGlue.fork')();
  await accept();await first;assert.equal(forks.length,1);assert.equal(forks[0][0].id,'$1');assert.equal(forks[0][1],env.project);
  const canceled=env.log.commands.get('agentGlue.fork')();await new Promise(r=>setImmediate(r));hide();await canceled;assert.equal(forks.length,1);
+});
+
+
+test('terminal context fork targets clicked tab with sidebar closed and refuses unrelated or multiple terminals',async t=>{
+ const forks=[];const clicked={name:'Second'},active={name:'First'};
+ const env=await start(t,{sessions:cwd=>[session(cwd,{name:'First'}),session(cwd,{id:'$2',name:'Second',sessionName:'claude-second',pane:'%2'})],sessionsApi:{sessionForTerminal:terminal=>terminal===clicked?'claude-second':terminal===active?'claude-main':undefined,forkSession:async(...args)=>forks.push(args)}});
+ await new Promise(r=>setTimeout(r,80));env.calls.length=0;
+ env.vscode.window.activeTerminal=active;
+ let input,accept,hide;env.vscode.ThemeIcon=class{};
+ env.vscode.window.createInputBox=()=>input={onDidHide:fn=>{hide=fn;},onDidTriggerButton(){},onDidAccept:fn=>{accept=fn;},show(){},dispose(){hide?.();}};
+ const fork=env.log.commands.get('agentGlue.fork');
+ const pending=fork([clicked]);await new Promise(r=>setImmediate(r));assert.equal(input.title,'Fork Second');await accept();await pending;
+ assert.equal(forks.length,1);assert.equal(forks[0][0].id,'$2');
+ assert.equal(env.calls.filter(([,args])=>args[0]==='capture-pane').length,0);
+ await fork({name:'Unrelated shell'});assert.match(env.log.errors.at(-1),/not an attached/);
+ await fork([clicked,active]);assert.match(env.log.errors.at(-1),/Choose one/);
+ await fork([undefined]);assert.match(env.log.errors.at(-1),/no longer available/);
+ assert.equal(forks.length,1);
+ for(const menu of ['terminal/title/context','terminal/context'])assert.ok(manifest.contributes.menus[menu].some(m=>m.command==='agentGlue.fork'));
+});
+
+test('terminal status switches between terminals in the same project without leaking reports',async t=>{
+ const first={name:'First'},second={name:'Second'};
+ const api={sessionForTerminal:terminal=>terminal===first?'claude-first':terminal===second?'claude-second':undefined};
+ const env=await start(t,{sessions:cwd=>[session(cwd,{name:'First',sessionName:'claude-first'}),session(cwd,{id:'$2',name:'Second',sessionName:'claude-second',pane:'%2'})],sessionsApi:api});
+ env.vscode.window.activeTerminal=first;
+ const directory=path.join(env.project,'.local/agent-glue/tasks');fs.mkdirSync(directory,{recursive:true});
+ for(const id of ['$1','$2'])fs.writeFileSync(path.join(directory,id+'.json'),JSON.stringify({title:'Work for '+id,sessionId:id,status:'active',updatedAt:'2026-10-29T12:00:00Z'}));
+ const view=await openSidebar(env);await settle(view);
+ await env.log.commands.get('agentGlue.showtasks')();
+ await waitFor(view,()=>lastState(view).resourceItems[0]?.label==='Work for $1','first status');
+ env.vscode.window.activeTerminal=second;env.log.activeTerminalChanged(second);
+ await waitFor(view,()=>lastState(view).resourceItems[0]?.label==='Work for $2','second status in same folder');
+ assert.equal(lastState(view).resourceItems.length,1);
 });

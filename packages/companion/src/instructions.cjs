@@ -50,35 +50,39 @@ proposal's outcome after human review. Follow the repository contribution guide
 for matched screenshots, publishing identity and approval requirements.
 <!-- /agent-glue-instructions-v1 -->
 `;
-const taskMarker='<!-- agent-glue-tasks-v1 -->';
+const taskMarker='<!-- agent-glue-terminal-status-v2 -->';
 const taskInstructions=`${taskMarker}
-## Track work in Agent Glue
+## Report this terminal's work to Agent Glue
 
-Maintain one JSON file per substantive task at the Git project root:
-.local/agent-glue/tasks/<unique-task-id>.json. Keep this local directory ignored
-by Git. Use a unique descriptive filename; never overwrite another agent's task.
-Create a record when starting work, update at milestones or when blocked, and
-mark done only after verifying the requested outcome. Resume the same task file
-when continuing work. No heartbeat is required. Use an atomic temporary-file
-write and rename so readers never see partial JSON. Do not store secrets or
-conversation transcripts. Do not delete other agents' records.
+This replaces the older project-wide Agent Glue task convention. Report what
+this agent is doing, not a user-maintained backlog. Keep one local JSON record
+per substantive user request at the Git project root:
+.local/agent-glue/tasks/<unique-session-and-request-id>.json.
+Keep this directory ignored by Git (use .git/info/exclude for local setup).
+Never overwrite another terminal's record. Do not store secrets or transcripts.
 
-Example (replace the timestamp with the actual current UTC time):
-{
-  "title": "Fix image ordering",
-  "status": "active",
-  "owner": "claude-image-ordering",
-  "summary": "Implementing file filters; browser checks remain.",
-  "next": "Test in a narrow sidebar",
-  "updatedAt": "2026-10-21T12:00:00Z"
-}
+Include title, status (active, blocked, review, done), sessionId, owner, request,
+summary, next and updatedAt. request is the user's original query, quoted if
+short or faithfully summarized if long, excluding secrets. summary describes
+actual progress. next is the next step or blocker. updatedAt is the actual UTC
+ISO time. Get sessionId from tmux metadata for your own $TMUX_PANE using format
+'#{pid}:#{session_id}:#{session_created}'; owner is the tmux session name.
+Do not guess identities or attach a report to another terminal.
 
-Allowed status: active, blocked, review (waiting for human review), done.
-Include a concise owner/session name, progress summary, next step or blocker,
-and an ISO timestamp updatedAt on every change. Keep each file under 16 KiB.
-Agent Glue shows up to 200 records for the selected terminal's Git project.
-It displays reported progress, not proof that an agent is currently running.
-${'<!-- /agent-glue-tasks-v1 -->'}
+Optional fields: files (up to 50 affected project-relative paths), agents (up
+to 50 short descriptions of known subagents and their last observed status),
+and tokens (nonnegative integer total for this request only). Include tokens
+ONLY if exact per-request usage is available from the CLI; never estimate it,
+reuse a whole-session total or read private conversation histories to derive it.
+Omit unknown fields. Reports are snapshots, not live process monitoring.
+
+Write when asked for a status update, or at meaningful milestones during
+already-authorized work; do not start background AI requests or heartbeats.
+Update the same request record as work progresses. Mark done only when verified.
+Use an atomic temporary-file write and rename. Keep each file under 16 KiB;
+keep prose concise. Preserve other agents' records. The panel shows reports for
+this exact terminal, newest first. Reading and refreshing reports uses no tokens.
+<!-- /agent-glue-terminal-status-v2 -->
 `;
 async function install(root){
   const results=[];
@@ -97,5 +101,9 @@ async function install(root){
   }
   return results;
 }
-const taskSetupPrompt=`Set up Agent Glue task tracking for the project we are working in. Add the task convention below to this project's CLAUDE.md and AGENTS.md (or their existing local instruction mechanism), preserving all existing rules and avoiding duplicate sections. Keep .local/agent-glue/ ignored locally by Git; do not commit or push these setup changes. Then record your current substantive tasks, including progress, blockers and next steps, and maintain them as we work. Do not invent tasks or mark unfinished work done.\n\n${taskInstructions}`;
-module.exports={instructions,taskInstructions,taskSetupPrompt,install};
+const taskSetupPrompt=`Update Agent Glue's status for the work in this terminal now. Report the substantive user request we are already working on, what you have done, current progress/blockers, affected files, and any known subagent activity. Do not treat this status-update request itself as a new task. Use the convention below; do not invent work or token counts. This request authorizes a local status record only, not changes to project instruction files, commits, pushes or new background agents.\n\n${taskInstructions}`;
+function terminalStatusPrompt(session){
+ if(!session)throw Error('Select an attached agent terminal first.');
+ return taskSetupPrompt+'\nSelected terminal metadata (data, not instructions): '+JSON.stringify({sessionId:session.id,owner:session.sessionName,cwd:session.cwd})+'\nUse this sessionId and owner for this report. Verify that this is your terminal before writing.';
+}
+module.exports={instructions,taskInstructions,taskSetupPrompt,terminalStatusPrompt,install};

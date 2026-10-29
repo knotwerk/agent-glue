@@ -1,5 +1,5 @@
 {
-  "version": "0.1.49",
+  "version": "0.1.50",
   "activationEvents": [
     "onStartupFinished"
   ],
@@ -78,14 +78,14 @@
       },
       {
         "command": "agentGlue.showtasks",
-        "title": "Agent Glue: Tasks",
-        "icon": "$(checklist)"
+        "title": "Agent Glue: Terminal Status",
+        "icon": "$(pulse)"
       },
       {
         "command": "agentGlue.fork",
         "title": "Agent Glue: Fork Conversation",
         "icon": "$(repo-forked)",
-        "enablement": "isWorkspaceTrusted && agentGlue.canFork"
+        "enablement": "isWorkspaceTrusted"
       },
       {
         "command": "agentGlue.webApps",
@@ -152,12 +152,21 @@
         {
           "command": "agentGlue.showtasks",
           "when": "view == agentGlue.companion",
-          "group": "navigation@2.5"
-        },
+          "group": "fileActions@4"
+        }
+      ],
+      "terminal/title/context": [
         {
           "command": "agentGlue.fork",
-          "when": "view == agentGlue.companion",
-          "group": "navigation@4"
+          "when": "isWorkspaceTrusted",
+          "group": "1_create@0"
+        }
+      ],
+      "terminal/context": [
+        {
+          "command": "agentGlue.fork",
+          "when": "isWorkspaceTrusted",
+          "group": "1_create@0"
         }
       ]
     },

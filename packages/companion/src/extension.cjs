@@ -94,12 +94,18 @@ function activate(context){
     else appsPanel.reveal(await mainEditorColumn(vscode));
     await apps.refresh(await core.sessions(),true);renderAppsPanel();
   }
-  async function forkConversation(){
+  async function forkConversation(target){
     if(forkBusy)return;
     forkBusy=true;
     try{
-      const source=byId(selected);if(!source)throw new Error('Select an agent terminal first.');
+      // Terminal context menus pass the clicked Terminal (or selected array).
+      // Never fall back to the sidebar's stale selection for an explicit target.
+      if(Array.isArray(target)){if(target.length!==1)throw new Error('Choose one agent terminal to fork.');target=target[0];if(!target)throw new Error('This terminal is no longer available.');}
+      const terminal=target??vscode.window.activeTerminal;
+      if(!terminal)throw new Error('Select an agent terminal first.');
       const link=await sessionsApi();if(!link?.forkSession)throw new Error('Update Agent Glue Sessions to enable conversation forks.');
+      const source=core.sessionForTerminal(terminal,await core.sessions(),link.sessionForTerminal(terminal));
+      if(!source)throw new Error('This terminal is not an attached agent session.');
       const folder=await new Promise(resolve=>{
         const input=vscode.window.createInputBox();input.title='Fork '+source.name;input.value=source.cwd;input.prompt='Destination folder on the workspace host. Enter to create the fork.';
         input.buttons=[{iconPath:new vscode.ThemeIcon('folder-open'),tooltip:'Browse folders'}];let done=false,browsing=false;
@@ -120,10 +126,10 @@ function activate(context){
   const publish=()=>{for(const view of views)post(view,{type:'state',state:state()});};
   function loadResources(force=false){
     const cwd=byId(selected)?.cwd;
-    const key=resourceTab+':'+prFilter+':'+(cwd||'');
+    const key=resourceTab+':'+prFilter+':'+(cwd||'')+(resourceTab==='tasks'?':'+selected:'');
     if(!force&&key===resourceKey&&(resourceTab==='files'||Date.now()-resourceLoadedAt<(resourceTab==='tasks'?5000:60000)))return;
     void vscode.commands.executeCommand('setContext','agentGlue.resourceTab',resourceTab);
-    if(sidebar)sidebar.description=({files:'Files',prs:'PRs',tasks:'Tasks'})[resourceTab];
+    if(sidebar)sidebar.description=({files:'Files',prs:'PRs',tasks:'Terminal status'})[resourceTab];
     const changed=key!==resourceKey;
     resourceKey=key;resourceLoadedAt=Date.now();const generation=++resourceGeneration;
     if(changed){resourceItems=[];resourceRoot=undefined;}
@@ -131,7 +137,7 @@ function activate(context){
     if(resourceTab==='files'){publish();return;}
     if(!cwd){resourceStatus='Select an agent terminal to see its project.';publish();return;}
     resourceStatus='Loading…';publish();
-    void resources.list(resourceTab,cwd,{filter:prFilter}).then(result=>{
+    void resources.list(resourceTab,cwd,{filter:prFilter,session:byId(selected)}).then(result=>{
       if(generation!==resourceGeneration)return;
       resourceRoot=result.root;
       resourceItems=result.items.map(item=>({...item,newComments:item.commentAt&&item.commentAt>(prSeen[item.id]||new Date(Date.now()-7*86400000).toISOString())}));
@@ -162,7 +168,6 @@ function activate(context){
       if(previous!==selected){cleared.delete(previous);followTarget=true;}
       if(!selected&&!vscode.window.activeTerminal&&sessionList.length)selected=sessionList[0].id;
       const session=byId(selected);
-      void vscode.commands.executeCommand('setContext','agentGlue.canFork',Boolean(session&&link?.forkSession&&!forkBusy));
       if(session&&sidebar?.visible&&!cleared.has(selected)){
         const {stdout}=await core.run('tmux',['capture-pane','-p','-J','-t',session.pane,'-S','-2000'],{maxBuffer:1024*1024});
         apps.observe(session,stdout);
@@ -201,9 +206,10 @@ function activate(context){
     await refresh();
     const targetId=selected,activeTerminal=vscode.window.activeTerminal;
     if(!targetId)throw new Error('Select an attached agent terminal before pasting.');
+    const request=typeof text==='function'?text(byId(targetId)):text;
     const target=await terminal(targetId);
     if(selected!==targetId||vscode.window.activeTerminal!==activeTerminal)throw new Error('The selected terminal changed. Try the action again.');
-    core.paste(target,{text,attachments:[]});
+    core.paste(target,{text:request,attachments:[]});
   }
   async function preview(file){
     if(!core.supported(file)){await vscode.commands.executeCommand('vscode.open',vscode.Uri.file(file),await mainEditorColumn(vscode));return;}
@@ -297,7 +303,7 @@ function activate(context){
       case 'ready':await refresh();if(message.clientPlatform==='mac')await ensureDictation();publish();if(view===draftWebview)post(view,{type:'focusDraft'});break;
       case 'refresh':cleared.delete(selected);await refresh();loadResources(true);break;
       case 'resourceTab':if(['files','prs','tasks'].includes(message.tab)){resourceTab=message.tab;loadResources();}break;
-      case 'setupTasks':await discussReview(require('./instructions.cjs').taskSetupPrompt);status='Task setup request pasted. Press Enter in the terminal to send.';break;
+      case 'setupTasks':await discussReview(require('./instructions.cjs').terminalStatusPrompt);status='Status request pasted. Press Enter to send; the agent response may use tokens.';break;
       case 'prFilter':if(resources.filters[message.filter]!==undefined){prFilter=message.filter;await context.workspaceState.update('prFilter',prFilter);loadResources();}break;
       case 'prSort':if(['title','number','updated','priority'].includes(message.sort)){prSort=message.sort;resourceItems=resources.sortItems(resourceItems,prSort);await context.workspaceState.update('prSort',prSort);}break;
       case 'prReadFilter':if(['all','unread'].includes(message.filter)){prReadFilter=message.filter;await context.workspaceState.update('prReadFilter',prReadFilter);}break;

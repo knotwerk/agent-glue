@@ -81,10 +81,15 @@ async function forkSession(source,destination,{exec,createTerminal,register,reso
  const title=source.name+'-fork-'+crypto.randomBytes(2).toString('hex');
  const session=source.profile+'-'+title.replace(/[^a-zA-Z0-9-]/g,'-');
  const args=account.cli==='codex'?['resume',child,'-C',destination]:['--resume',parent,'--fork-session','--session-id',child,'--name',title];
- const command=`${account.envKey}=${quote(account.home)} command ${account.cli} ${args.map(quote).join(' ')}`;
- await exec('tmux',['new-session','-d','-s',session,'-c',destination,'zsh','-lic',command]);
- await exec('tmux',['set-option','-t','='+session,'@title',title]);
- await exec('tmux',['set-option','-t','='+session,'@agent_glue_thread_id',child]);
+ // Launch without interactive shell startup hooks or aliases. Keep a shell
+ // alive after CLI exit so a fast failure cannot destroy the new session and
+ // hide its diagnostics before the terminal attaches.
+ const command=`${account.envKey}=${quote(account.home)} ${account.cli} ${args.map(quote).join(' ')}; agent_glue_exit=$?; printf '\nAgent Glue: ${account.cli} exited (status %s). The original conversation is unchanged.\n' "$agent_glue_exit"; exec zsh -l`;
+ const createdSession=await exec('tmux',['new-session','-d','-P','-F','#{session_id}','-s',session,'-c',destination,'-e',`PATH=${process.env.PATH}`,'/bin/sh','-c',command]);
+ const target=createdSession.stdout.trim();
+ if(!/^\$\d+$/.test(target))throw Error('Tmux did not return the new session identity.');
+ await exec('tmux',['set-option','-t',target,'@title',title]);
+ await exec('tmux',['set-option','-t',target,'@agent_glue_thread_id',child]);
  const terminal=createTerminal({name:title,shellPath:path.join(__dirname,'helpers/agent-tmux-attach.zsh'),shellArgs:[session,title],cwd:destination});
  register(session,terminal);terminal.show();return {session,threadId:child};
 }

@@ -33,7 +33,7 @@ view toolbar is outside these panels.*
 | Extension | What it does |
 | --- | --- |
 | **[Sessions](packages/sessions/README.md)** | Attaches named tmux sessions to native VS Code terminal tabs and reconnects them after disconnects or window reloads. |
-| **[Companion](packages/companion/README.md)** | Adds the Agent Glue sidebar: Files, PRs, Tasks, and a note field with attachments and optional dictation. Follows the terminal you select, even outside the open workspace folder. |
+| **[Companion](packages/companion/README.md)** | Adds the Agent Glue sidebar: Files, PRs, terminal status, and a note field with attachments and optional dictation. Follows the terminal you select, even outside the open workspace folder. |
 
 Install either independently. Companion needs Sessions only to focus or paste
 into an agent terminal. A bundled local helper supplies native downloads and,
@@ -49,7 +49,7 @@ on macOS, dictation and clipboard images.
   it offers an `agent restore: …` task to recreate the named tmux session and
   resume that conversation. This can help after a power cut, but does not preserve
   running processes, unsaved work or a conversation the CLI never saved.
-- **Branch a conversation.** Click **Fork Conversation** in the sidebar toolbar,
+- **Branch a conversation.** Right-click a terminal tab and choose **Agent Glue: Fork Conversation**,
   confirm or browse to a folder on the workspace host, and continue the saved
   history in a separately named tmux terminal. The original keeps running.
   Different folders do not copy project files or create Git worktrees. Forking
@@ -74,9 +74,13 @@ on macOS, dictation and clipboard images.
   Review hosted PRs or prepared local changes. Keep stable ordering, mark items
   read, and leave local feedback for your AI before anything is pushed. Prepared
   local reviews do not require a published GitHub PR.
-- **Keep track.** Tasks shows agent-reported progress, blockers and next steps.
-  **Set up with agent** pastes instructions for maintaining small local task
-  files. You press Enter; it does not submit automatically.
+- **See what this terminal is doing.** **Terminal Status** in the sidebar menu shows
+  the user request, reported progress, affected files, blockers and subagent activity
+  for the selected terminal. Reports show their update time; token counts appear
+  only when the agent has exact per-request usage. **Ask agent to update** prepares
+  a request for you to send (which may use tokens). Refresh reads saved reports
+  without contacting an AI.
+  You press Enter; it does not submit automatically.
 - **Send a clear note.** Write or dictate, attach a file or screenshot, then paste
   into the selected terminal. Check the recipient and press Enter yourself.
 
@@ -134,7 +138,7 @@ npm run package
    For Codex, use a session name such as `codex-my-project` and run `codex`.
 5. Run **Agent Glue: Attach Agent Tmux Sessions**, select its terminal tab, then
    open **Agent Glue** in the activity bar. The view title offers Files, PRs and
-   Tasks. Mention an existing file path to populate Files.
+   Refresh; **Terminal Status** is in its overflow menu. Mention an existing file path to populate Files.
 
 For attachments, local feedback and task records, ignore `.local/agent-glue/`
 in the agent's Git project. Use the project's `.gitignore`, or add the pattern
@@ -185,7 +189,7 @@ permission-bypass flags or manage your credentials.
 | --- | --- |
 | Files | Click to open; right-click to download or copy the path. Recent ↓ uses mentions or edits; the small timestamp shows disk modification time. Show more expands 20 files at a time, up to 100 recents. |
 | PRs | Click a name to open its review; expand the chevron for files. The right-hand dot marks read/unread; blue indicates new comments. **Leave comment** saves locally for prepared reviews, or posts to GitHub for hosted PRs. |
-| Tasks | **Set up with agent**, then send the pasted request. Expand tasks for progress and update time. Status is maintained by agents, not inferred from running processes. |
+| Terminal Status (sidebar menu) | **Ask agent to update**, then send the prepared request. Reports are per terminal and show their last update; they are not live process activity. |
 | Note | Choose a recipient, attach files, and paste. The microphone and clipboard-image actions use the local Mac helper. |
 
 Missing files? Check **All types / Any time**, use **Show all** if filters hide

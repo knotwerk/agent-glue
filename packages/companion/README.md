@@ -73,7 +73,7 @@ and do not count toward either limit. Switching sessions resets the view to 20.
 
 ## PR review material
 
-The header contains Files, PRs and Tasks.
+The header contains Files, PRs and Refresh. Terminal Status is in the overflow menu.
 
 ![PR review and rendered HTML with synthetic content](https://raw.githubusercontent.com/knotwerk/agent-glue/main/docs/images/agent-glue-pr-review.png)
 
@@ -138,26 +138,25 @@ for each terminal session. A hidden-file count and Show all button appear when
 filters exclude discovered files. The controls apply to discovered
 files, not a scan of the project; up to 100 recent files are retained.
 
-## Tasks
+## Terminal status
 
-Choose the checklist icon (**Agent Glue: Tasks**) to see reported work across
-agents in the selected terminal's Git project. Unfinished tasks are shown first;
-choose All tasks or Done to see completed work. Expand a row for its owner,
-last update, summary and next step. Status is reported by the agent, not inferred
-from running processes; check the update time when work looks stale. The visible
-view refreshes about every six seconds, or use Refresh.
+Choose **Terminal Status** from the sidebar overflow menu to see what the selected
+terminal is working on: the original user request, progress, blockers, affected
+files, and reported subagent activity. Newest reports appear first, including
+completed work. Reports are snapshots with update times, not live monitoring.
 
-Click **Set up with agent** to paste a setup request into the selected terminal.
-Press Enter to send. The request asks the agent to add the convention to the
-project’s CLAUDE.md and AGENTS.md (or existing local instructions), preserve
-existing rules, keep task records ignored locally, and record current work.
-The button does not submit the prompt or edit project files itself. The command
-**Agent Glue: Install Agent Instructions** remains available for direct setup.
+**Ask agent to update** prepares a request in that terminal. Press Enter to send;
+the response may use tokens. Refresh only reads local reports and uses no tokens.
+The button does not submit automatically or edit project instructions. For an
+ongoing convention, **Agent Glue: Install Agent Instructions** remains available.
 
-Each agent maintains a separate JSON file in `.local/agent-glue/tasks/` at the
-Git project root. Keep that local directory ignored. Required fields are `title`,
-`status` (`active`, `blocked`, `review`, `done`) and `updatedAt` (ISO timestamp).
-Optional `owner`, `summary`, and `next` give context. Use unique filenames and
-atomic writes; update at milestones and mark done after verification. Records
-are limited to 16 KiB each and 200 per project. Invalid records produce a warning
-without hiding valid tasks. No conversations or agent memory are indexed.
+Agents write ignored JSON records under `.local/agent-glue/tasks/` at the Git
+project root, using a unique filename per terminal and user request. Fields:
+`title`, `status` (`active`, `blocked`, `review`, `done`), `sessionId`, `owner`,
+`request`, `summary`, `next`, `updatedAt` (UTC ISO timestamp). `sessionId` is the
+tmux identity `#{pid}:#{session_id}:#{session_created}`; `owner` is its session name.
+Old records without an identity match only an exact owner/session name.
+Optional `files` and `agents` are lists of short strings; `tokens` is an exact
+per-request integer count, omitted when unavailable. Never estimate token usage
+or substitute a whole-session total. Use atomic writes, at most 16 KiB per record
+and 200 records per project. No conversation histories or agent memory are indexed.

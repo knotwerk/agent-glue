@@ -3,7 +3,7 @@ const fs=require('node:fs/promises');
 const {constants}=require('node:fs');
 const path=require('node:path');
 const statuses=['active','blocked','review','done'];
-async function read(root){
+async function read(root,{session}={}){
   const dir=path.join(root,'.local/agent-glue/tasks');
   try{
     const base=await fs.realpath(root);
@@ -30,12 +30,16 @@ async function read(root){
         if(bytesRead>16384)throw Error('Task too large');
         const task=JSON.parse(buffer.subarray(0,bytesRead).toString('utf8'));
         if(!task||typeof task.title!=='string'||!task.title.trim()||task.title.length>300||!statuses.includes(task.status))throw Error('Invalid task');
-        for(const key of ['owner','summary','next'])if(task[key]!==undefined&&(typeof task[key]!=='string'||task[key].length>4000))throw Error('Invalid task text');
+        for(const key of ['owner','summary','next','sessionId','request'])if(task[key]!==undefined&&(typeof task[key]!=='string'||task[key].length>4000))throw Error('Invalid task text');
         if(typeof task.updatedAt!=='string'||!Number.isFinite(Date.parse(task.updatedAt)))throw Error('Missing update time');
-        items.push({id:'task:'+name,label:task.title,status:task.status,owner:task.owner||'',summary:task.summary||'',next:task.next||'',updatedAt:new Date(task.updatedAt).toISOString()});
+        for(const key of ['files','agents'])if(task[key]!==undefined&&(!Array.isArray(task[key])||task[key].length>50||task[key].some(value=>typeof value!=='string'||value.length>1000)))throw Error('Invalid status details');
+        if(task.tokens!==undefined&&(!Number.isSafeInteger(task.tokens)||task.tokens<0))throw Error('Invalid token count');
+        // A reused terminal name must not pick up records from a different run.
+        if(session&&(task.sessionId?task.sessionId!==session.id:task.owner!==session.sessionName))continue;
+        items.push({request:task.request||'',files:task.files||[],agents:task.agents||[],tokens:task.tokens,id:'task:'+name,label:task.title,status:task.status,owner:task.owner||'',summary:task.summary||'',next:task.next||'',updatedAt:new Date(task.updatedAt).toISOString()});
       }catch{invalid++;}finally{await handle?.close();}
     }
-    items.sort((a,b)=>statuses.indexOf(a.status)-statuses.indexOf(b.status)||a.label.localeCompare(b.label,undefined,{numeric:true}));
+    items.sort((a,b)=>b.updatedAt.localeCompare(a.updatedAt)||a.label.localeCompare(b.label,undefined,{numeric:true}));
     return {root,items,warning:invalid?`${invalid} task file(s) could not be read. Check JSON, status and updatedAt in .local/agent-glue/tasks/.`:''};
   }catch(error){if(error.code==='ENOENT')return {root,items:[]};throw error;}
 }
