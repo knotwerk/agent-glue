@@ -22,8 +22,9 @@ See the [setup guide](https://github.com/knotwerk/agent-glue#readme).
 - **Fork Conversation**: right-click a terminal tab, then confirm or browse to
   its destination folder. Requires Sessions and a discoverable conversation with
   native CLI fork support. The original stays running; project files are not copied.
-- **Web apps**: open detected local services above Files, or use **Show all**
-  across terminals. Links use VS Code SSH forwarding. Right-click for browser
+- **Web apps**: a single collapsed line above Files shows active counts for
+  this terminal and all terminals. Expand to see filenames or page paths beside
+  links; use **All** for the cross-terminal list. Links use VS Code SSH forwarding. Right-click for browser
   and copy-link actions.
 - **Attachments**: drop files or paste screenshots (up to 25 MB each). They are
   stored in the Git-ignored `.local/agent-glue/inbox/` of the agent's project,

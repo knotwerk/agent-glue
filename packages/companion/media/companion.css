@@ -185,3 +185,9 @@ body[data-view="sidebar"] .note-input textarea { min-height:72px; max-height:non
 .file-modified { flex-shrink:0; margin-left:auto; font-size:10px; color:var(--vscode-descriptionForeground,#aaa); white-space:nowrap; }
 
 .web-app-row { width: 100%; overflow-wrap: anywhere; padding: 5px 12px; }
+
+.web-app-header { display:flex; align-items:center; gap:6px; padding:3px 5px; white-space:nowrap; }
+.web-app-toggle { flex:1; min-width:0; text-align:left; overflow:hidden; text-overflow:ellipsis; }
+.web-app-header > button { font-size:11px; }
+.web-app-row { display:flex; flex-direction:column; align-items:flex-start; text-align:left; }
+.web-app-address { color:var(--vscode-descriptionForeground); font-size:11px; }

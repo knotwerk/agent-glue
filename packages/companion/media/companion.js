@@ -153,14 +153,23 @@
   }
 
   let reviewGeneration;
+  const expandedWebApps=new Set();
   function renderWebApps(){
-    if(draftOnly)return;const tab=state.resourceTab||'files';
-    const apps=byId('web-apps');
-    if(apps){apps.hidden=tab!=='files';const signature=JSON.stringify(state.webApps||[]);if(apps.dataset.signature===signature)return;apps.dataset.signature=signature;apps.replaceChildren();
-      const header=element('header','section-header');header.append(element('h2','','Web apps'));
-      const all=element('button','text-button','Show all');all.setAttribute('aria-label','Show all web apps');all.onclick=()=>send({type:'showWebApps'});header.append(all);apps.append(header);
-      for(const app of state.webApps||[]){const row=element('button','item-main web-app-row',`${app.running?'●':'○'} ${app.url}`);row.title=app.running?'Open running web app':'Service is not responding';row.onclick=()=>send({type:'webApp',id:app.id,action:'open'});row.oncontextmenu=e=>{e.preventDefault();send({type:'webApp',id:app.id,action:'menu'});};apps.append(row);}
-    }
+    if(draftOnly)return;
+    const apps=byId('web-apps');if(!apps)return;apps.hidden=(state.resourceTab||'files')!=='files';
+    const items=state.webApps||[],session=state.selectedSessionId||'';
+    const signature=JSON.stringify([session,items,state.webAppsActiveTotal]);
+    if(apps.dataset.signature===signature)return;apps.dataset.signature=signature;apps.replaceChildren();
+    const active=items.filter(a=>a.running).length,total=state.webAppsActiveTotal??active;
+    const header=element('header','web-app-header');
+    const toggle=element('button','text-button web-app-toggle');
+    const list=element('div','web-app-list');
+    const update=()=>{const open=expandedWebApps.has(session);list.hidden=!open;toggle.textContent=`${open?'▾':'▸'} Web apps · ${active} active`;toggle.setAttribute('aria-expanded',String(open));};
+    toggle.setAttribute('aria-label','Expand or collapse web apps');toggle.title='Active web apps in this terminal';toggle.onclick=()=>{if(expandedWebApps.has(session))expandedWebApps.delete(session);else expandedWebApps.add(session);update();};
+    const all=element('button','text-button',`All · ${total}`);all.setAttribute('aria-label','Show all web apps');all.title=`${total} active web apps across terminals`;all.onclick=()=>send({type:'showWebApps'});
+    header.append(toggle,all);apps.append(header,list);update();
+    for(const app of items){const row=element('button','item-main web-app-row');row.append(element('span','web-app-name',`${app.running?'●':'○'} ${app.label||app.url}`),element('span','web-app-address',app.url));row.title=(app.running?'Open running web app':'Service is not responding')+' — '+app.url;row.onclick=()=>send({type:'webApp',id:app.id,action:'open'});row.oncontextmenu=e=>{e.preventDefault();send({type:'webApp',id:app.id,action:'menu'});};list.append(row);}
+    if(!items.length)list.append(element('p','task-meta','No web apps detected in this terminal.'));
   }
   function renderFiles() {
     if (draftOnly) return;

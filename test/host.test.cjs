@@ -908,7 +908,7 @@ test('web app actions forward client links and open in the main editor, with ext
  env.vscode.env.openExternal=async u=>{opened.push(u.toString());return true;};
  await openSidebar(env);
  await env.log.commands.get('agentGlue.webApps')();
- const panel=env.log.panels.find(p=>p.viewType==='agentGlue.webApps');assert.ok(panel.webview.html.includes('Fixture'));
+ const panel=env.log.panels.find(p=>p.viewType==='agentGlue.webApps');assert.ok(panel.webview.html.includes('Fixture'));assert.ok(panel.webview.html.includes('<td>index.html</td>'));assert.ok(panel.webview.html.includes('Web apps · 1 active'));
  await panel.webview.send({id:'app',action:'open'});
  const browser=env.log.executed.find(c=>c[0]==='simpleBrowser.api.open');assert.equal(browser[1].toString(),'http://localhost:43000/index.html');assert.equal(browser[2].viewColumn,1);
  await panel.webview.send({id:'app',action:'copy'});assert.equal(env.log.clipboard.at(-1),'http://localhost:43000/index.html');

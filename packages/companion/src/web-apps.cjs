@@ -5,6 +5,9 @@ function localUrl(value){
  try{const u=new URL(value);if(!['http:','https:'].includes(u.protocol)||u.username||u.password||!['localhost','127.0.0.1','0.0.0.0','[::]','[::1]'].includes(u.hostname))return;
  if(['0.0.0.0','[::]'].includes(u.hostname))u.hostname='localhost';return u.href;}catch{}
 }
+function appLabel(value){
+ try{const pathname=new URL(value).pathname;const last=pathname.split('/').filter(Boolean).at(-1);if(!last)return 'App root (/)';let name;try{name=decodeURIComponent(last);}catch{name=last;}return pathname.endsWith('/')?name+'/':name;}catch{return 'Web app';}
+}
 function links(text){return [...new Set((text.replace(/\x1b\[[0-?]*[ -/]*[@-~]/g,'').match(/https?:\/\/[^\s<>"'`]+/g)||[]).map(s=>localUrl(s.replace(/[),.;]+$/,''))).filter(Boolean))].slice(-30);}
 function probe(url){return new Promise(resolve=>{
  const request=(url.startsWith('https:')?https:http).request(url,{method:'HEAD',timeout:1000,rejectUnauthorized:false},response=>{response.destroy();resolve(true);});
@@ -56,4 +59,4 @@ class WebApps{
   this.items=results.sort((a,b)=>a.terminal.localeCompare(b.terminal)||a.url.localeCompare(b.url));return this.items;
  }
 }
-module.exports={WebApps,localUrl,links,probe,owners,processRows,listeners,socketRows};
+module.exports={appLabel,WebApps,localUrl,links,probe,owners,processRows,listeners,socketRows};

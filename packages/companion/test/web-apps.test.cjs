@@ -22,3 +22,11 @@ test('server association survives reparenting but never PID reuse',async()=>{
  const apps=new WebApps(exec,async()=>true),a={id:'a',name:'One',cwd:'/a',pane:'%1'};
  assert.equal((await apps.refresh([a],true)).length,1);parent='1';assert.equal((await apps.refresh([a],true)).length,1);start='Thu Oct 29 13:00:00 2026';assert.equal((await apps.refresh([a],true)).filter(row=>row.running).length,0);
 });
+
+test('web app labels show filenames or routes without inventing an index file',()=>{
+ const {appLabel}=require('../src/web-apps.cjs');
+ assert.equal(appLabel('http://localhost:3000/reviews/report%20v2.html?mode=preview'),'report v2.html');
+ assert.equal(appLabel('http://localhost:3000/'),'App root (/)');
+ assert.equal(appLabel('http://localhost:3000/dashboard/'),'dashboard/');
+ assert.equal(appLabel('http://localhost:3000/%oops'),'%oops');
+});

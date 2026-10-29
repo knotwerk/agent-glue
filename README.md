@@ -56,9 +56,10 @@ on macOS, dictation and clipboard images.
   Different folders do not copy project files or create Git worktrees. Forking
   needs a discoverable saved conversation and a CLI with native fork support;
   ambiguous identities fail explicitly rather than selecting another chat.
-- **Open running apps.** Files includes **Web apps** discovered from local URLs
-  and server processes. Click to open in VS Code's main editor; right-click for
-  **Open in browser** or **Copy link** through SSH forwarding. **Show all** lists
+- **Open running apps.** Files includes a collapsed **Web apps** line with active
+  counts for this terminal and all terminals. Expand it to see filenames or page
+  paths beside links. Apps are discovered from terminal URLs and server processes. Click to open in VS Code's main editor; right-click for
+  **Open in browser** or **Copy link** through SSH forwarding. **All** lists
   services across agent terminals and projects. Process discovery uses `ss` or
   `lsof`; local URLs still work without those tools. Detached services can only
   be associated if their ancestry was observed or their URL was shared.
@@ -192,7 +193,7 @@ permission-bypass flags or manage your credentials.
 | PRs | Click a name to open its review; expand the chevron for files. The right-hand dot marks read/unread; blue indicates new comments. **Leave comment** saves locally for prepared reviews, or posts to GitHub for hosted PRs. |
 | Status (pulse icon) | **Ask agent to update**, then send the prepared request. Reports are per terminal and show their last update; they are not live process activity. |
 | Terminal tab | Right-click → **Agent Glue: Fork Conversation**; confirm or browse to the new terminal’s folder. |
-| Web apps (above Files) | Open a running app; right-click for browser/copy options. **Show all** lists apps across terminals. |
+| Web apps (above Files) | Open a running app; right-click for browser/copy options. **All** lists apps across terminals. |
 | Note | Choose a recipient, attach files, and paste. The microphone and clipboard-image actions use the local Mac helper. |
 
 Missing files? Check **All types / Any time**, use **Show all** if filters hide

@@ -5,7 +5,7 @@ const fs=require('node:fs/promises');
 const path=require('node:path');
 const crypto=require('node:crypto');
 const core=require('./core.cjs');
-const {WebApps}=require('./web-apps.cjs');
+const {WebApps,appLabel}=require('./web-apps.cjs');
 const resources=require('./resources.cjs');
 const {BrowserLinks}=require('./browser-links.cjs');
 const {openPullRequest,detail:reviewDetail,openReviewDocument}=require('./pull-request.cjs');
@@ -72,7 +72,7 @@ function activate(context){
   async function appAction(id,action='open'){
     const item=apps.items.find(a=>a.id===id);if(!item)throw new Error('This web app is no longer available. Refresh the view.');
     if(action==='menu'){
-      const chosen=await vscode.window.showQuickPick(['Open','Open in browser','Copy link'],{placeHolder:item.url});
+      const chosen=await vscode.window.showQuickPick(['Open','Open in browser','Copy link'],{placeHolder:appLabel(item.url)+' — '+item.url});
       if(!chosen)return;action={'Open':'open','Open in browser':'browser','Copy link':'copy'}[chosen];
     }
     const uri=vscode.Uri.parse(item.url);
@@ -87,7 +87,7 @@ function activate(context){
     const signature=JSON.stringify(apps.items);if(signature===appsSignature)return;appsSignature=signature;
     const esc=s=>String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
     const nonce=crypto.randomBytes(20).toString('hex');
-    appsPanel.webview.html=`<!doctype html><html><head><meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; script-src 'nonce-${nonce}'"><style>body{font:13px var(--vscode-font-family);color:var(--vscode-foreground)}td,th{text-align:left;padding:8px}button{cursor:pointer}table{width:100%}</style></head><body><h2>Web apps</h2><label><input id="all" type="checkbox">Show stopped</label><table><tr><th>Status</th><th>Terminal</th><th>Folder</th><th>Address</th><th></th></tr>${apps.items.map(a=>`<tr data-running="${a.running}" ${a.running?'':'hidden'}><td>${a.running?'● Running':'○ Stopped'}</td><td>${esc(a.terminal)}</td><td>${esc(a.cwd)}</td><td><button data-id="${esc(a.id)}" data-action="open">${esc(a.url)}</button></td><td><button data-id="${esc(a.id)}" data-action="menu">…</button></td></tr>`).join('')}</table><script nonce="${nonce}">const v=acquireVsCodeApi();const all=document.getElementById('all');all.checked=Boolean(v.getState()?.showStopped);const filter=()=>document.querySelectorAll('[data-running="false"]').forEach(r=>r.hidden=!all.checked);filter();all.onchange=()=>{v.setState({showStopped:all.checked});filter();};document.onclick=e=>{const b=e.target.closest('[data-id]');if(b)v.postMessage({id:b.dataset.id,action:b.dataset.action});};document.oncontextmenu=e=>{const b=e.target.closest('[data-id]');if(b){e.preventDefault();v.postMessage({id:b.dataset.id,action:'menu'});}};</script></body></html>`;
+    appsPanel.webview.html=`<!doctype html><html><head><meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; script-src 'nonce-${nonce}'"><style>body{font:13px var(--vscode-font-family);color:var(--vscode-foreground)}td,th{text-align:left;padding:8px}button{cursor:pointer}table{width:100%}</style></head><body><h2>Web apps · ${apps.items.filter(a=>a.running).length} active</h2><label><input id="all" type="checkbox">Show stopped</label><table><tr><th>Status</th><th>Terminal</th><th>Folder</th><th>File / page</th><th>Address</th><th></th></tr>${apps.items.map(a=>`<tr data-running="${a.running}" ${a.running?'':'hidden'}><td>${a.running?'● Running':'○ Stopped'}</td><td>${esc(a.terminal)}</td><td>${esc(a.cwd)}</td><td>${esc(appLabel(a.url))}</td><td><button data-id="${esc(a.id)}" data-action="open">${esc(a.url)}</button></td><td><button data-id="${esc(a.id)}" data-action="menu">…</button></td></tr>`).join('')}</table><script nonce="${nonce}">const v=acquireVsCodeApi();const all=document.getElementById('all');all.checked=Boolean(v.getState()?.showStopped);const filter=()=>document.querySelectorAll('[data-running="false"]').forEach(r=>r.hidden=!all.checked);filter();all.onchange=()=>{v.setState({showStopped:all.checked});filter();};document.onclick=e=>{const b=e.target.closest('[data-id]');if(b)v.postMessage({id:b.dataset.id,action:b.dataset.action});};document.oncontextmenu=e=>{const b=e.target.closest('[data-id]');if(b){e.preventDefault();v.postMessage({id:b.dataset.id,action:'menu'});}};</script></body></html>`;
   }
   async function showApps(){
     if(!appsPanel){appsPanel=vscode.window.createWebviewPanel('agentGlue.webApps','Agent Glue — Web apps',await mainEditorColumn(vscode),{enableScripts:true});appsPanel.onDidDispose(()=>{appsPanel=undefined;appsSignature=undefined;});appsPanel.webview.onDidReceiveMessage(m=>appAction(m.id,m.action).catch(e=>vscode.window.showErrorMessage(e.message)));}
@@ -121,7 +121,7 @@ function activate(context){
   let queue=Promise.resolve();
   const byId=id=>sessionList.find(s=>s.id===id);
   const save=async()=>{await context.workspaceState.update('files',files);await context.workspaceState.update('draft',draft);await context.workspaceState.update('selected',selected);};
-  const state=()=>({webApps:apps.items.filter(item=>item.sessionId===selected),sessions:sessionList,selectedSessionId:selected,filesMessage:byId(selected)?`No existing files found in the recent terminal output for ${byId(selected).name}.`:'No matching agent session for the selected terminal. Select an attached agent terminal or use Choose Session in the view menu.',resourceTab,prFilter,prSort,prReadFilter,resourceItems:visibleResources(),resourceStatus,resourceGeneration,resourceFolder:resourceRoot||byId(selected)?.cwd||'',files:(files[selected]||[]).filter(f=>!f.hidden&&!f.missing),draft,status:status||connectionStatus});
+  const state=()=>({webApps:apps.items.filter(item=>item.sessionId===selected).map(item=>({...item,label:appLabel(item.url)})),webAppsActiveTotal:apps.items.filter(item=>item.running).length,sessions:sessionList,selectedSessionId:selected,filesMessage:byId(selected)?`No existing files found in the recent terminal output for ${byId(selected).name}.`:'No matching agent session for the selected terminal. Select an attached agent terminal or use Choose Session in the view menu.',resourceTab,prFilter,prSort,prReadFilter,resourceItems:visibleResources(),resourceStatus,resourceGeneration,resourceFolder:resourceRoot||byId(selected)?.cwd||'',files:(files[selected]||[]).filter(f=>!f.hidden&&!f.missing),draft,status:status||connectionStatus});
   const post=(view,message)=>{try{void Promise.resolve(view.postMessage(message)).catch(()=>views.delete(view));}catch{views.delete(view);}};
   const publish=()=>{for(const view of views)post(view,{type:'state',state:state()});};
   function loadResources(force=false){
@@ -184,7 +184,7 @@ function activate(context){
         if(!uploadBusy()&&vscode.window.activeTerminal===activeTerminal){draft.targetId=session.id;draft.targetName=session.name;draft.root=root;followTarget=false;}
       }
       if(sidebar?.visible)loadResources();
-      if(sidebar?.visible||appsPanel?.visible)void apps.refresh(appsPanel?.visible?sessionList:sessionList.filter(s=>s.id===selected)).then(()=>{renderAppsPanel();publish();}).catch(error=>{status='Web apps: '+error.message;publish();});
+      if(sidebar?.visible||appsPanel?.visible)void apps.refresh(sessionList).then(()=>{renderAppsPanel();publish();}).catch(error=>{status='Web apps: '+error.message;publish();});
       connectionStatus=link?'':'Sessions extension unavailable: previews and Copy still work. Enable Sessions for terminal focus and paste.';
       await save();publish();
     }catch(error){status=error.message;publish();}
