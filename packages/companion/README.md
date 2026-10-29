@@ -2,9 +2,11 @@
 
 A side panel for working beside agent terminals in VS Code, including over
 Remote SSH. Keep the native Claude and Codex CLIs while finding their files,
-reviewing changes and following tasks across projects.
+reviewing changes and following the selected terminal’s work.
 
 ![Files, PRs and Tasks with synthetic example content](https://raw.githubusercontent.com/knotwerk/agent-glue/main/docs/images/agent-glue-sidebar.png)
+
+The screenshot includes the earlier Tasks view, now replaced by per-terminal Status.
 
 **Early preview.** Requires VS Code 1.100+ and a trusted Linux or macOS workspace
 host with `tmux` and `git`. Install on the SSH host. The bundled helper installs
@@ -17,6 +19,12 @@ See the [setup guide](https://github.com/knotwerk/agent-glue#readme).
 - **Preview**: renders `.md`, `.markdown`, `.html` and `.htm` in a sandboxed
   panel. Mermaid diagrams render in Markdown. Project-local document links and anchors work; remote content is
   blocked, and only project-local PNG/JPEG/GIF/WebP images (up to 5 MB) appear.
+- **Fork Conversation**: right-click a terminal tab, then confirm or browse to
+  its destination folder. Requires Sessions and a discoverable conversation with
+  native CLI fork support. The original stays running; project files are not copied.
+- **Web apps**: open detected local services above Files, or use **Show all**
+  across terminals. Links use VS Code SSH forwarding. Right-click for browser
+  and copy-link actions.
 - **Attachments**: drop files or paste screenshots (up to 25 MB each). They are
   stored in the Git-ignored `.local/agent-glue/inbox/` of the agent's project,
   and their paths are added to your draft.
@@ -73,7 +81,7 @@ and do not count toward either limit. Switching sessions resets the view to 20.
 
 ## PR review material
 
-The header contains Files, PRs and Refresh. Terminal Status is in the overflow menu.
+The header contains Files, PRs, Status (pulse icon), and Refresh.
 
 ![PR review and rendered HTML with synthetic content](https://raw.githubusercontent.com/knotwerk/agent-glue/main/docs/images/agent-glue-pr-review.png)
 
@@ -140,7 +148,7 @@ files, not a scan of the project; up to 100 recent files are retained.
 
 ## Terminal status
 
-Choose **Terminal Status** from the sidebar overflow menu to see what the selected
+Choose **Terminal Status** (pulse icon) in the sidebar toolbar to see what the selected
 terminal is working on: the original user request, progress, blockers, affected
 files, and reported subagent activity. Newest reports appear first, including
 completed work. Reports are snapshots with update times, not live monitoring.

@@ -543,7 +543,7 @@ test('native view title commands switch resource tabs and expose file actions in
   resources.list=async()=>({root:'/synthetic',items:[]});t.after(()=>{resources.list=original;});
   const env=await start(t);const view=await openSidebar(env);
   const menu=manifest.contributes.menus['view/title'];
-  assert.deepEqual(menu.filter(m=>m.group.startsWith('navigation')).map(m=>m.command),['agentGlue.showfiles','agentGlue.showprs','agentGlue.refreshResources']);
+  assert.deepEqual(menu.filter(m=>m.group.startsWith('navigation')).map(m=>m.command),['agentGlue.showfiles','agentGlue.showprs','agentGlue.refreshResources','agentGlue.showtasks']);
   for(const tab of ['prs','files']){
     assert.ok(menu.some(m=>m.command==='agentGlue.show'+tab&&m.group.startsWith('navigation')));
     await env.log.commands.get('agentGlue.show'+tab)();await settle(view);

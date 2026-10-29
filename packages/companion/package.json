@@ -1,5 +1,5 @@
 {
-  "version": "0.1.50",
+  "version": "0.1.51",
   "activationEvents": [
     "onStartupFinished"
   ],
@@ -152,7 +152,7 @@
         {
           "command": "agentGlue.showtasks",
           "when": "view == agentGlue.companion",
-          "group": "fileActions@4"
+          "group": "navigation@2.5"
         }
       ],
       "terminal/title/context": [

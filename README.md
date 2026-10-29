@@ -26,7 +26,8 @@ make them awkward. No replacement agent runtime or central orchestration service
 ![Agent Glue Files, PRs and Tasks views, with explanatory captions and synthetic demo data](docs/images/agent-glue-sidebar.png)
 
 *Actual Companion sidebar rendering with invented data. The native VS Code
-view toolbar is outside these panels.*
+view toolbar is outside these panels. The earlier Tasks example is now the
+per-terminal Status view.*
 
 ## Two extensions, two jobs
 
@@ -74,7 +75,7 @@ on macOS, dictation and clipboard images.
   Review hosted PRs or prepared local changes. Keep stable ordering, mark items
   read, and leave local feedback for your AI before anything is pushed. Prepared
   local reviews do not require a published GitHub PR.
-- **See what this terminal is doing.** **Terminal Status** in the sidebar menu shows
+- **See what this terminal is doing.** **Terminal Status** (pulse icon) in the sidebar toolbar shows
   the user request, reported progress, affected files, blockers and subagent activity
   for the selected terminal. Reports show their update time; token counts appear
   only when the agent has exact per-request usage. **Ask agent to update** prepares
@@ -137,8 +138,8 @@ npm run package
 
    For Codex, use a session name such as `codex-my-project` and run `codex`.
 5. Run **Agent Glue: Attach Agent Tmux Sessions**, select its terminal tab, then
-   open **Agent Glue** in the activity bar. The view title offers Files, PRs and
-   Refresh; **Terminal Status** is in its overflow menu. Mention an existing file path to populate Files.
+   open **Agent Glue** in the activity bar. The view title offers Files, PRs, Status (pulse icon), and
+   Refresh. Mention an existing file path to populate Files.
 
 For attachments, local feedback and task records, ignore `.local/agent-glue/`
 in the agent's Git project. Use the project's `.gitignore`, or add the pattern
@@ -189,7 +190,9 @@ permission-bypass flags or manage your credentials.
 | --- | --- |
 | Files | Click to open; right-click to download or copy the path. Recent ↓ uses mentions or edits; the small timestamp shows disk modification time. Show more expands 20 files at a time, up to 100 recents. |
 | PRs | Click a name to open its review; expand the chevron for files. The right-hand dot marks read/unread; blue indicates new comments. **Leave comment** saves locally for prepared reviews, or posts to GitHub for hosted PRs. |
-| Terminal Status (sidebar menu) | **Ask agent to update**, then send the prepared request. Reports are per terminal and show their last update; they are not live process activity. |
+| Status (pulse icon) | **Ask agent to update**, then send the prepared request. Reports are per terminal and show their last update; they are not live process activity. |
+| Terminal tab | Right-click → **Agent Glue: Fork Conversation**; confirm or browse to the new terminal’s folder. |
+| Web apps (above Files) | Open a running app; right-click for browser/copy options. **Show all** lists apps across terminals. |
 | Note | Choose a recipient, attach files, and paste. The microphone and clipboard-image actions use the local Mac helper. |
 
 Missing files? Check **All types / Any time**, use **Show all** if filters hide

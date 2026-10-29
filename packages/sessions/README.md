@@ -24,7 +24,10 @@ MIT licensed, free to reuse and modify.
 - Generated tasks live in extension storage and appear through a task provider;
   workspace `tasks.json` is never touched.
 - Exposes a small API to **Agent Glue Companion** (find, focus and paste into a
-  session's terminal). Sessions works fine without Companion.
+  session's terminal, and fork a saved conversation). With Companion installed,
+  right-click a terminal tab → **Agent Glue: Fork Conversation** and confirm
+  the destination folder. Native CLI fork support and an identifiable saved
+  conversation are required. Sessions works fine without Companion.
 - Does not support untrusted or virtual workspaces.
 
 If the original "Tmux Claude/Codex Attach" extension is installed, disable it
