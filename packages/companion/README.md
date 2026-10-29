@@ -40,7 +40,7 @@ See the [setup guide](https://github.com/knotwerk/agent-glue#readme).
   the right and hides terminal tabs; run it again to restore your previous
   values.
 
-Install **Agent Glue Sessions** as well to focus and paste into terminals; the
+Install **Agent Glue Sessions** as well to focus or paste into terminals and fork conversations; the
 view, previews and Copy work without it. Requires `tmux` and `git` on the
 workspace host. It captures only the selected pane, and only while the view is
 visible. Companion never reads agent conversation histories.
@@ -129,7 +129,10 @@ A multi-file upload holds its original recipient until the batch completes.
 Switching terminals can change the file list during transfer, but not the
 upload destination. Failed transfers cancel their host upload; partial inbox
 files remain. A queued batch whose recipient has already changed is refused so
-you can choose the files again for the intended recipient.
+you can choose the files again for the intended recipient. Project discovery is
+retried if the destination was not ready yet; an existing filename does not cause
+a recipient-change error. Uploads require a Git project with an ignored inbox.
+A missing project or closed session is reported separately from a changed recipient.
 
 Prepared reviews also support **Leave comment → Save local comment** before any
 push. Feedback lives in `.local/agent-glue/review-comments.jsonl` beside the
@@ -165,7 +168,7 @@ Files, other agents, the original request and technical update details stay
 behind expandable sections. Reports are snapshots, not live monitoring.
 
 **🤖 Run** starts a separate, non-interactive Claude or Codex CLI call using the
-selected terminal’s account. It summarizes the last 500 visible terminal lines
+selected terminal’s account. It summarizes the last 500 recent terminal lines
 (up to 24,000 characters), together with the saved task list; it does not resume or send input into the active chat,
 index history, or edit project files. Missing context is reported as unknown.
 The call uses tokens, and its usage is labelled separately from original-task

@@ -37,7 +37,7 @@ per-terminal Status view.*
 | **[Companion](packages/companion/README.md)** | Adds the Agent Glue sidebar: Files, PRs, terminal status, and a note field with attachments and optional dictation. Follows the terminal you select, even outside the open workspace folder. |
 
 Install either independently. Companion needs Sessions only to focus or paste
-into an agent terminal. A bundled local helper supplies native downloads and,
+into an agent terminal or fork conversations. A bundled local helper supplies native downloads and,
 on macOS, dictation and clipboard images.
 
 ## What gets easier
@@ -76,15 +76,21 @@ on macOS, dictation and clipboard images.
   Review hosted PRs or prepared local changes. Keep stable ordering, mark items
   read, and leave local feedback for your AI before anything is pushed. Prepared
   local reviews do not require a published GitHub PR.
-- **See what this terminal is doing.** **Terminal Status** (pulse icon) in the sidebar toolbar shows
-  the user request, reported progress, affected files, blockers and subagent activity
-  for the selected terminal. Reports show their update time; token counts appear
-  only when the agent has exact per-request usage. **🤖 Run** makes a one-off CLI call using the terminal’s agent account to
-  summarize recent visible output, without messaging the active conversation.
-  This uses tokens; the refresh’s usage is shown separately when available.
-  Ordinary Refresh reads saved reports without contacting an AI.
+- **See what this terminal is doing.** **Terminal Status** (pulse icon) shows
+  all unfinished tasks plus the three latest completions. Compact rows show
+  status and update age; expand for the full title, plain-English progress,
+  next step and supporting details. **🤖 Run** uses a separate one-off CLI call
+  with the terminal’s agent account to summarize recent terminal output and
+  merge updates into the saved list. New tasks are added and unfinished work
+  stays visible even when it scrolls out of view. This uses tokens without
+  messaging the active conversation. Reports are timestamped snapshots;
+  ordinary Refresh reads saved reports without contacting an AI.
 - **Send a clear note.** Write or dictate, attach a file or screenshot, then paste
-  into the selected terminal. Check the recipient and press Enter yourself.
+  into the selected terminal. Drop local files—including HTML—or paste absolute
+  local file paths, quoted paths with spaces, or file URLs. The local helper
+  copies them to the remote project's Git-ignored `.local/agent-glue/inbox/`
+  and attaches the remote paths. Uploads keep the chosen recipient throughout
+  the transfer. Check the recipient and press Enter yourself.
 
 ## Documents belong in the review
 
@@ -193,8 +199,8 @@ permission-bypass flags or manage your credentials.
 | PRs | Click a name to open its review; expand the chevron for files. The right-hand dot marks read/unread; blue indicates new comments. **Leave comment** saves locally for prepared reviews, or posts to GitHub for hosted PRs. |
 | Status (pulse icon) | **🤖 Run** summarizes recent terminal output through a separate CLI call. Uses tokens; reports are timestamped snapshots, not live process activity. |
 | Terminal tab | Right-click → **Agent Glue: Fork Conversation**; confirm or browse to the new terminal’s folder. |
-| Web apps (above Files) | Open a running app; right-click for browser/copy options. **All** lists apps across terminals. |
-| Note | Choose a recipient, attach files, and paste. The microphone and clipboard-image actions use the local Mac helper. |
+| Web apps (above Files) | Open a running app; right-click for browser/copy options. Expand the single-line summary for this terminal; **All** lists apps across terminals. |
+| Note | Choose a recipient, drop files or paste local file paths, then paste the note into the terminal. The local helper transfers files over SSH; microphone and clipboard-image actions are available on Mac. |
 
 Missing files? Check **All types / Any time**, use **Show all** if filters hide
 files, or select **Refresh**. Only the selected pane's last 2,000 lines are
