@@ -1,5 +1,5 @@
 {
-  "version": "0.1.48",
+  "version": "0.1.49",
   "activationEvents": [
     "onStartupFinished"
   ],
@@ -80,6 +80,16 @@
         "command": "agentGlue.showtasks",
         "title": "Agent Glue: Tasks",
         "icon": "$(checklist)"
+      },
+      {
+        "command": "agentGlue.fork",
+        "title": "Agent Glue: Fork Conversation",
+        "icon": "$(repo-forked)",
+        "enablement": "isWorkspaceTrusted && agentGlue.canFork"
+      },
+      {
+        "command": "agentGlue.webApps",
+        "title": "Agent Glue: Show All Web Apps"
       }
     ],
     "viewsContainers": {
@@ -143,6 +153,11 @@
           "command": "agentGlue.showtasks",
           "when": "view == agentGlue.companion",
           "group": "navigation@2.5"
+        },
+        {
+          "command": "agentGlue.fork",
+          "when": "view == agentGlue.companion",
+          "group": "navigation@4"
         }
       ]
     },

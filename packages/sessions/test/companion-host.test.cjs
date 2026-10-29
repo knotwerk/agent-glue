@@ -15,7 +15,7 @@ function fixture(){
  const vscode={workspace:{isTrusted:true},extensions:{getExtension:()=>({activate:async()=>link})},Uri:{joinPath:(_,p)=>p},ViewColumn:{Beside:2},commands:{executeCommand:async()=>{},registerCommand:(name,fn)=>{commands.set(name,fn);return disposable();}},env:{clipboard:{writeText:async text=>{fixture.copied=text;}}},window:{activeTerminal:undefined,onDidChangeActiveTerminal:()=>disposable(),registerWebviewViewProvider:(_,p)=>{provider=p;return disposable();},showErrorMessage:message=>{throw new Error(message);}}};
  class Uploads{constructor(){this.active=new Map();this.pending=new Set();}async close(){}async expire(){}async abort(id){this.active.delete(id);}async start(message,root,targetId){this.active.set(message.id,{root,targetId});}}
  const core={...realCore,Uploads,sessions:async()=>sessions,project:async cwd=>cwd,run:async(command,args)=>{captures.push(args);return {stdout:''};}};
- const sandbox={module:{exports:{}},require:name=>name==='vscode'?vscode:name==='./editor-target.cjs'?require('../../companion/src/editor-target.cjs'):name==='./core.cjs'?core:name==='./browser-links.cjs'?require('../../companion/src/browser-links.cjs'):name==='./resources.cjs'?require('../../companion/src/resources.cjs'):name==='./pull-request.cjs'?require('../../companion/src/pull-request.cjs'):name==='./views.cjs'?require('../../companion/src/views.cjs'):name==='./preview.cjs'?{openPreview:async()=>{}}:require(name),setInterval:()=>1,clearInterval(){},console};
+ const sandbox={module:{exports:{}},require:name=>name==='vscode'?vscode:name==='./editor-target.cjs'?require('../../companion/src/editor-target.cjs'):name==='./web-apps.cjs'?require('../../companion/src/web-apps.cjs'):name==='./core.cjs'?core:name==='./browser-links.cjs'?require('../../companion/src/browser-links.cjs'):name==='./resources.cjs'?require('../../companion/src/resources.cjs'):name==='./pull-request.cjs'?require('../../companion/src/pull-request.cjs'):name==='./views.cjs'?require('../../companion/src/views.cjs'):name==='./preview.cjs'?{openPreview:async()=>{}}:require(name),setInterval:()=>1,clearInterval(){},console};
  vm.runInNewContext(fs.readFileSync(path.join(__dirname,'../../companion/src/extension.cjs'),'utf8'),sandbox);
  sandbox.module.exports.activate({workspaceState:state,globalState:state,subscriptions:[],extensionUri:'fixture',extensionPath:'/fixture'});
  const webview={cspSource:'fixture:',asWebviewUri:p=>p,postMessage:async message=>{messages.push(structuredClone(message));},onDidReceiveMessage:fn=>{receive=fn;return disposable();}};
@@ -37,7 +37,7 @@ test('closed recipient preserves draft and cannot redirect paste to another term
  await h.send({type:'editDraft',text:'Keep this draft'});assert.equal(h.stored.get('draft').text,'Keep this draft');
 });
 test('capture runs only for selected pane while the sidebar is visible',async()=>{
- const h=fixture();await h.settle();assert.ok(h.captures.every(args=>args[args.indexOf('-t')+1]==='%1'));
+ const h=fixture();await h.settle();assert.ok(h.captures.filter(args=>args[0]==='capture-pane').every(args=>args[args.indexOf('-t')+1]==='%1'));
  h.view.visible=false;const count=h.captures.length;await h.send({type:'refresh'});assert.equal(h.captures.length,count);
 });
 test('an in-flight attachment locks its recipient until transfer finishes',async()=>{

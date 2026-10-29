@@ -309,7 +309,8 @@ agent_tmux_live_json() {
       lookup_created="$created"
       stamp_epoch="$(agent_tmux_stamp_epoch "$stamp" 2>/dev/null || true)"
       [[ -n "$stamp_epoch" ]] && lookup_created="$stamp_epoch"
-      resume_id="$(agent_tmux_resume_id "$program" "$lookup_created" "$cwd" 2>/dev/null || true)"
+      resume_id="$(tmux show-option -qv -t "=$session" @agent_glue_thread_id 2>/dev/null || true)"
+      [[ -n "$resume_id" ]] || resume_id="$(agent_tmux_resume_id "$program" "$lookup_created" "$cwd" 2>/dev/null || true)"
       resume_command="$(agent_tmux_resume_command "$program" "$resume_id" 2>/dev/null || true)"
       jq -nc \
         --arg session "$session" \

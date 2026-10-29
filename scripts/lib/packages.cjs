@@ -20,10 +20,10 @@ const packages = {
   sessions: {
     dir: path.join(root, 'packages/sessions'),
     // Entries every VSIX must contain (paths inside the archive's extension/ folder).
-    required: ['LICENSE.txt', 'package.json', 'readme.md', 'extension.js', 'helpers/agent-tmux-attach.zsh', 'helpers/agent-tmux-rename.zsh', 'helpers/agent-tmux-restore.zsh', 'helpers/agent-tmux-state.zsh', 'helpers/sync-agent-tmux-tasks.zsh'],
+    required: ['LICENSE.txt', 'package.json', 'readme.md', 'fork.cjs', 'extension.js', 'helpers/agent-tmux-attach.zsh', 'helpers/agent-tmux-rename.zsh', 'helpers/agent-tmux-restore.zsh', 'helpers/agent-tmux-state.zsh', 'helpers/sync-agent-tmux-tasks.zsh'],
     // Files that must match the repository byte-for-byte.
-    identical: ['LICENSE.txt', 'extension.js', 'helpers/agent-tmux-attach.zsh', 'helpers/agent-tmux-rename.zsh', 'helpers/agent-tmux-restore.zsh', 'helpers/agent-tmux-state.zsh', 'helpers/sync-agent-tmux-tasks.zsh', 'package.json'],
-    allowed: [/^license\.txt$/i, /^package\.json$/, /^readme\.md$/i, /^extension\.js$/, /^helpers\/[a-z-]+\.zsh$/],
+    identical: ['LICENSE.txt', 'fork.cjs', 'extension.js', 'helpers/agent-tmux-attach.zsh', 'helpers/agent-tmux-rename.zsh', 'helpers/agent-tmux-restore.zsh', 'helpers/agent-tmux-state.zsh', 'helpers/sync-agent-tmux-tasks.zsh', 'package.json'],
+    allowed: [/^license\.txt$/i, /^package\.json$/, /^readme\.md$/i, /^extension\.js$/, /^fork\.cjs$/, /^helpers\/[a-z-]+\.zsh$/],
   },
   companion: {
     dir: path.join(root, 'packages/companion'),

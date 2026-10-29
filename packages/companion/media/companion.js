@@ -153,6 +153,15 @@
   }
 
   let reviewGeneration;
+  function renderWebApps(){
+    if(draftOnly)return;const tab=state.resourceTab||'files';
+    const apps=byId('web-apps');
+    if(apps){apps.hidden=tab!=='files';const signature=JSON.stringify(state.webApps||[]);if(apps.dataset.signature===signature)return;apps.dataset.signature=signature;apps.replaceChildren();
+      const header=element('header','section-header');header.append(element('h2','','Web apps'));
+      const all=element('button','text-button','Show all');all.setAttribute('aria-label','Show all web apps');all.onclick=()=>send({type:'showWebApps'});header.append(all);apps.append(header);
+      for(const app of state.webApps||[]){const row=element('button','item-main web-app-row',`${app.running?'●':'○'} ${app.url}`);row.title=app.running?'Open running web app':'Service is not responding';row.onclick=()=>send({type:'webApp',id:app.id,action:'open'});row.oncontextmenu=e=>{e.preventDefault();send({type:'webApp',id:app.id,action:'menu'});};apps.append(row);}
+    }
+  }
   function renderFiles() {
     if (draftOnly) return;
     const container = byId('files');
@@ -565,6 +574,7 @@
       state = { sessions: [], files: [], draft: {}, uploads: [], ...message.state };
       const fileState=JSON.stringify([Math.floor(Date.now()/60000),state.selectedSessionId,state.sessions,state.files,state.filesMessage,state.resourceTab,state.prFilter,state.resourceItems,state.resourceStatus,state.resourceFolder,state.resourceGeneration]);
       if(fileState!==lastFileState){lastFileState=fileState;renderFiles();}
+      renderWebApps();
       renderDraft();
       renderUploads();
       if (localError) status(localError, true);

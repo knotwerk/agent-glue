@@ -202,6 +202,13 @@ test('browser: resource icons, PR filters and local PR document links work witho
   await page.goto('https://agent-glue.test/');
   const setState=state=>page.evaluate(state=>window.dispatchEvent(new MessageEvent('message',{data:{type:'state',state}})),state);
   await setState({resourceTab:'files',files:[{id:'doc',path:'/docs/x.md',label:'x.md',pinned:true}],draft:{}});
+  await page.evaluate(()=>window.originalFileRow=document.querySelector('.file-item'));
+  await setState({resourceTab:'files',files:[{id:'doc',path:'/docs/x.md',label:'x.md',pinned:true}],draft:{},webApps:[{id:'app',url:'http://localhost:3000/index.html',running:true}]});
+  await page.getByRole('button',{name:'● http://localhost:3000/index.html',exact:true}).click();
+  await page.getByRole('button',{name:'● http://localhost:3000/index.html',exact:true}).click({button:'right'});
+  await page.getByRole('button',{name:'Show all web apps',exact:true}).click();
+  assert.ok(await page.evaluate(()=>window.sent.some(m=>m.type==='webApp'&&m.action==='open')&&window.sent.some(m=>m.type==='webApp'&&m.action==='menu')&&window.sent.some(m=>m.type==='showWebApps')));
+  assert.ok(await page.evaluate(()=>window.originalFileRow===document.querySelector('.file-item')),'web app updates preserve file rows');
   assert.equal(await page.locator('.file-group').count(),0);
   await page.locator('.file-item').hover();
   await page.getByRole('button',{name:'Open in browser',exact:true}).click();

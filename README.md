@@ -49,6 +49,18 @@ on macOS, dictation and clipboard images.
   it offers an `agent restore: …` task to recreate the named tmux session and
   resume that conversation. This can help after a power cut, but does not preserve
   running processes, unsaved work or a conversation the CLI never saved.
+- **Branch a conversation.** Click **Fork Conversation** in the sidebar toolbar,
+  confirm or browse to a folder on the workspace host, and continue the saved
+  history in a separately named tmux terminal. The original keeps running.
+  Different folders do not copy project files or create Git worktrees. Forking
+  needs a discoverable saved conversation and a CLI with native fork support;
+  ambiguous identities fail explicitly rather than selecting another chat.
+- **Open running apps.** Files includes **Web apps** discovered from local URLs
+  and server processes. Click to open in VS Code's main editor; right-click for
+  **Open in browser** or **Copy link** through SSH forwarding. **Show all** lists
+  services across agent terminals and projects. Process discovery uses `ss` or
+  `lsof`; local URLs still work without those tools. Detached services can only
+  be associated if their ancestry was observed or their URL was shared.
 - **Keep accounts separate.** Run multiple Claude or Codex logins side by side
   using separate CLI configuration directories—for example, personal and client
   subscriptions. Agent Glue keeps their terminals organised and supports the

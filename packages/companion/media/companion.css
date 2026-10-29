@@ -183,3 +183,5 @@ body[data-view="sidebar"] .note-input textarea { min-height:72px; max-height:non
 
 .file-heading { display:flex; align-items:baseline; gap:6px; min-width:0; }
 .file-modified { flex-shrink:0; margin-left:auto; font-size:10px; color:var(--vscode-descriptionForeground,#aaa); white-space:nowrap; }
+
+.web-app-row { width: 100%; overflow-wrap: anywhere; padding: 5px 12px; }

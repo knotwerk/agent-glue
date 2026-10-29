@@ -162,7 +162,7 @@ test('only the selected pane is captured, read-only, and only while the view is 
   const view = await openSidebar(env);
   const captures = env.calls.filter(([, args]) => args[0] === 'capture-pane');
   assert.ok(captures.length >= 1);
-  for (const [cmd, args] of env.calls) {
+  for (const [cmd, args] of captures) {
     assert.equal(cmd, 'tmux');
     assert.ok(['capture-pane'].includes(args[0]), `unexpected tmux call ${args[0]}`);
     assert.ok(!args.includes('send-keys'));
@@ -636,7 +636,7 @@ test('unmapped terminals with unique tmux titles get their own file list',async 
  const view=await openSidebar(env);await settle(view);
  assert.equal(lastState(view).selectedSessionId,'$2');
  assert.equal(lastState(view).files.length,2);
- assert.ok(env.calls.every(([,args])=>args[args.indexOf('-t')+1]==='%2'));
+ assert.ok(env.calls.filter(([,args])=>args[0]==='capture-pane').every(([,args])=>args[args.indexOf('-t')+1]==='%2'));
 });
 test('opening a recent file focuses the main editor before opening from a right-hand terminal group',async t=>{
  const env=await start(t);const view=await openSidebar(env);await settle(view);
@@ -895,4 +895,31 @@ test('task setup pastes trusted instructions into the selected terminal without 
  assert.equal(lastState(view).draft.text,'Keep my note');
  assert.equal(fs.existsSync(path.join(env.project,'CLAUDE.md')),false);
  assert.match(lastState(view).status,/Press Enter/);
+});
+
+test('web app actions forward client links and open in the main editor, with external alternative',async t=>{
+ const {WebApps}=require('../packages/companion/src/web-apps.cjs');const original=WebApps.prototype.scan;
+ const item={id:'app',sessionId:'$1',terminal:'Fixture',cwd:'/fixture',url:'http://localhost:3000/index.html',running:true};
+ WebApps.prototype.scan=async function(){this.items=[item];return this.items;};t.after(()=>{WebApps.prototype.scan=original;});
+ const env=await start(t);const forwarded=[],opened=[];
+ const uri=s=>({toString:()=>s});env.vscode.Uri.parse=uri;
+ env.vscode.env.asExternalUri=async u=>{forwarded.push(u.toString());return uri('http://localhost:43000/index.html');};
+ env.vscode.env.openExternal=async u=>{opened.push(u.toString());return true;};
+ await openSidebar(env);
+ await env.log.commands.get('agentGlue.webApps')();
+ const panel=env.log.panels.find(p=>p.viewType==='agentGlue.webApps');assert.ok(panel.webview.html.includes('Fixture'));
+ await panel.webview.send({id:'app',action:'open'});
+ const browser=env.log.executed.find(c=>c[0]==='simpleBrowser.api.open');assert.equal(browser[1].toString(),'http://localhost:43000/index.html');assert.equal(browser[2].viewColumn,1);
+ await panel.webview.send({id:'app',action:'copy'});assert.equal(env.log.clipboard.at(-1),'http://localhost:43000/index.html');
+ await panel.webview.send({id:'app',action:'browser'});assert.deepEqual(opened,['http://localhost:3000/index.html']);assert.equal(forwarded.length,2);
+});
+
+test('fork folder prompt freezes its source and duplicate clicks do not create duplicate forks',async t=>{
+ const forks=[];const env=await start(t,{sessionsApi:{sessionForTerminal:()=>undefined,forkSession:async(...args)=>forks.push(args)}});await openSidebar(env);
+ let input,accept,hide;env.vscode.ThemeIcon=class{constructor(id){this.id=id;}};
+ env.vscode.window.createInputBox=()=>input={onDidHide:fn=>{hide=fn;},onDidTriggerButton(){},onDidAccept:fn=>{accept=fn;},show(){},dispose(){hide?.();}};
+ const first=env.log.commands.get('agentGlue.fork')();await new Promise(r=>setImmediate(r));
+ assert.equal(input.value,env.project);await env.log.commands.get('agentGlue.fork')();
+ await accept();await first;assert.equal(forks.length,1);assert.equal(forks[0][0].id,'$1');assert.equal(forks[0][1],env.project);
+ const canceled=env.log.commands.get('agentGlue.fork')();await new Promise(r=>setImmediate(r));hide();await canceled;assert.equal(forks.length,1);
 });

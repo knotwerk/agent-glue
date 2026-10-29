@@ -5,6 +5,7 @@ const fs=require('node:fs/promises');
 const path=require('node:path');
 const crypto=require('node:crypto');
 const core=require('./core.cjs');
+const {WebApps}=require('./web-apps.cjs');
 const resources=require('./resources.cjs');
 const {BrowserLinks}=require('./browser-links.cjs');
 const {openPullRequest,detail:reviewDetail,openReviewDocument}=require('./pull-request.cjs');
@@ -15,6 +16,7 @@ function activate(context){
   const views=new Set(),panels=new Map(),uploads=new core.Uploads();
   const browserLinks=new BrowserLinks({mermaidPath:path.join(context.extensionPath,'dist/mermaid.js')});
   context.subscriptions.push(browserLinks);
+  const apps=new WebApps(core.run);let appsPanel,appsSignature,forkBusy=false;
   let sidebar,sidebarWebview,draftPanel,draftWebview,sessionList=[],selected=context.workspaceState.get('selected'),files=context.workspaceState.get('files',{});
   // Recover files hidden with the removed sidebar action; honor explicit [remove] directives.
   for(const entries of Object.values(files))for(const file of entries){
@@ -67,11 +69,53 @@ function activate(context){
     await helperSetup;
     if(!await probeDictation(capability))throw new Error('Reload Window to activate the updated local helper, then try again.');
   }
+  async function appAction(id,action='open'){
+    const item=apps.items.find(a=>a.id===id);if(!item)throw new Error('This web app is no longer available. Refresh the view.');
+    if(action==='menu'){
+      const chosen=await vscode.window.showQuickPick(['Open','Open in browser','Copy link'],{placeHolder:item.url});
+      if(!chosen)return;action={'Open':'open','Open in browser':'browser','Copy link':'copy'}[chosen];
+    }
+    const uri=vscode.Uri.parse(item.url);
+    if(action==='browser'){await vscode.env.openExternal(uri);return;}
+    const external=await vscode.env.asExternalUri(uri);
+    if(action==='copy'){await vscode.env.clipboard.writeText(external.toString());return;}
+    const column=await mainEditorColumn(vscode);
+    try{await vscode.commands.executeCommand('simpleBrowser.api.open',external,{viewColumn:column,preserveFocus:false});}catch{await vscode.env.openExternal(uri);}
+  }
+  function renderAppsPanel(){
+    if(!appsPanel)return;
+    const signature=JSON.stringify(apps.items);if(signature===appsSignature)return;appsSignature=signature;
+    const esc=s=>String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+    const nonce=crypto.randomBytes(20).toString('hex');
+    appsPanel.webview.html=`<!doctype html><html><head><meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; script-src 'nonce-${nonce}'"><style>body{font:13px var(--vscode-font-family);color:var(--vscode-foreground)}td,th{text-align:left;padding:8px}button{cursor:pointer}table{width:100%}</style></head><body><h2>Web apps</h2><label><input id="all" type="checkbox">Show stopped</label><table><tr><th>Status</th><th>Terminal</th><th>Folder</th><th>Address</th><th></th></tr>${apps.items.map(a=>`<tr data-running="${a.running}" ${a.running?'':'hidden'}><td>${a.running?'● Running':'○ Stopped'}</td><td>${esc(a.terminal)}</td><td>${esc(a.cwd)}</td><td><button data-id="${esc(a.id)}" data-action="open">${esc(a.url)}</button></td><td><button data-id="${esc(a.id)}" data-action="menu">…</button></td></tr>`).join('')}</table><script nonce="${nonce}">const v=acquireVsCodeApi();const all=document.getElementById('all');all.checked=Boolean(v.getState()?.showStopped);const filter=()=>document.querySelectorAll('[data-running="false"]').forEach(r=>r.hidden=!all.checked);filter();all.onchange=()=>{v.setState({showStopped:all.checked});filter();};document.onclick=e=>{const b=e.target.closest('[data-id]');if(b)v.postMessage({id:b.dataset.id,action:b.dataset.action});};document.oncontextmenu=e=>{const b=e.target.closest('[data-id]');if(b){e.preventDefault();v.postMessage({id:b.dataset.id,action:'menu'});}};</script></body></html>`;
+  }
+  async function showApps(){
+    if(!appsPanel){appsPanel=vscode.window.createWebviewPanel('agentGlue.webApps','Agent Glue — Web apps',await mainEditorColumn(vscode),{enableScripts:true});appsPanel.onDidDispose(()=>{appsPanel=undefined;appsSignature=undefined;});appsPanel.webview.onDidReceiveMessage(m=>appAction(m.id,m.action).catch(e=>vscode.window.showErrorMessage(e.message)));}
+    else appsPanel.reveal(await mainEditorColumn(vscode));
+    await apps.refresh(await core.sessions(),true);renderAppsPanel();
+  }
+  async function forkConversation(){
+    if(forkBusy)return;
+    forkBusy=true;
+    try{
+      const source=byId(selected);if(!source)throw new Error('Select an agent terminal first.');
+      const link=await sessionsApi();if(!link?.forkSession)throw new Error('Update Agent Glue Sessions to enable conversation forks.');
+      const folder=await new Promise(resolve=>{
+        const input=vscode.window.createInputBox();input.title='Fork '+source.name;input.value=source.cwd;input.prompt='Destination folder on the workspace host. Enter to create the fork.';
+        input.buttons=[{iconPath:new vscode.ThemeIcon('folder-open'),tooltip:'Browse folders'}];let done=false,browsing=false;
+        const finish=value=>{if(done)return;done=true;resolve(value);input.dispose();};
+        input.onDidHide(()=>{if(!browsing)finish();});
+        input.onDidTriggerButton(async()=>{browsing=true;try{const picked=await vscode.window.showOpenDialog({canSelectFolders:true,canSelectFiles:false,canSelectMany:false,defaultUri:vscode.Uri.file(input.value)});if(picked?.[0])input.value=picked[0].fsPath;}finally{browsing=false;if(!done)input.show();}});
+        input.onDidAccept(async()=>{try{const folder=path.resolve(source.cwd,input.value.replace(/^~(?=\/|$)/,require('node:os').homedir()));if(!(await fs.stat(folder)).isDirectory())throw Error();finish(folder);}catch{input.validationMessage='Choose an existing folder on the workspace host.';}});input.show();
+      });
+      if(folder)await link.forkSession({...source},folder);
+    }finally{forkBusy=false;}
+  }
   const cleared=new Set();
   let queue=Promise.resolve();
   const byId=id=>sessionList.find(s=>s.id===id);
   const save=async()=>{await context.workspaceState.update('files',files);await context.workspaceState.update('draft',draft);await context.workspaceState.update('selected',selected);};
-  const state=()=>({sessions:sessionList,selectedSessionId:selected,filesMessage:byId(selected)?`No existing files found in the recent terminal output for ${byId(selected).name}.`:'No matching agent session for the selected terminal. Select an attached agent terminal or use Choose Session in the view menu.',resourceTab,prFilter,prSort,prReadFilter,resourceItems:visibleResources(),resourceStatus,resourceGeneration,resourceFolder:resourceRoot||byId(selected)?.cwd||'',files:(files[selected]||[]).filter(f=>!f.hidden&&!f.missing),draft,status:status||connectionStatus});
+  const state=()=>({webApps:apps.items.filter(item=>item.sessionId===selected),sessions:sessionList,selectedSessionId:selected,filesMessage:byId(selected)?`No existing files found in the recent terminal output for ${byId(selected).name}.`:'No matching agent session for the selected terminal. Select an attached agent terminal or use Choose Session in the view menu.',resourceTab,prFilter,prSort,prReadFilter,resourceItems:visibleResources(),resourceStatus,resourceGeneration,resourceFolder:resourceRoot||byId(selected)?.cwd||'',files:(files[selected]||[]).filter(f=>!f.hidden&&!f.missing),draft,status:status||connectionStatus});
   const post=(view,message)=>{try{void Promise.resolve(view.postMessage(message)).catch(()=>views.delete(view));}catch{views.delete(view);}};
   const publish=()=>{for(const view of views)post(view,{type:'state',state:state()});};
   function loadResources(force=false){
@@ -118,8 +162,10 @@ function activate(context){
       if(previous!==selected){cleared.delete(previous);followTarget=true;}
       if(!selected&&!vscode.window.activeTerminal&&sessionList.length)selected=sessionList[0].id;
       const session=byId(selected);
+      void vscode.commands.executeCommand('setContext','agentGlue.canFork',Boolean(session&&link?.forkSession&&!forkBusy));
       if(session&&sidebar?.visible&&!cleared.has(selected)){
         const {stdout}=await core.run('tmux',['capture-pane','-p','-J','-t',session.pane,'-S','-2000'],{maxBuffer:1024*1024});
+        apps.observe(session,stdout);
         const existing=await core.discoverReferences(stdout,session.cwd,{projectRoot:core.project});
         if(vscode.window.activeTerminal!==activeTerminal){refreshAgain=true;return;}
         const previousFiles=(files[session.id]||[]).map(file=>({...file}));
@@ -133,6 +179,7 @@ function activate(context){
         if(!uploadBusy()&&vscode.window.activeTerminal===activeTerminal){draft.targetId=session.id;draft.targetName=session.name;draft.root=root;followTarget=false;}
       }
       if(sidebar?.visible)loadResources();
+      if(sidebar?.visible||appsPanel?.visible)void apps.refresh(appsPanel?.visible?sessionList:sessionList.filter(s=>s.id===selected)).then(()=>{renderAppsPanel();publish();}).catch(error=>{status='Web apps: '+error.message;publish();});
       connectionStatus=link?'':'Sessions extension unavailable: previews and Copy still work. Enable Sessions for terminal focus and paste.';
       await save();publish();
     }catch(error){status=error.message;publish();}
@@ -245,6 +292,8 @@ function activate(context){
       return;
     }
     switch(message.type){
+      case 'webApp':await appAction(message.id,message.action);break;
+      case 'showWebApps':await showApps();break;
       case 'ready':await refresh();if(message.clientPlatform==='mac')await ensureDictation();publish();if(view===draftWebview)post(view,{type:'focusDraft'});break;
       case 'refresh':cleared.delete(selected);await refresh();loadResources(true);break;
       case 'resourceTab':if(['files','prs','tasks'].includes(message.tab)){resourceTab=message.tab;loadResources();}break;
@@ -369,6 +418,8 @@ function activate(context){
   }
   context.subscriptions.push(vscode.window.registerWebviewViewProvider('agentGlue.companion',{resolveWebviewView(view){sidebar=view;const webview=view.webview;sidebarWebview=webview;setup(webview,false);view.onDidChangeVisibility(()=>{if(view.visible)void refresh();});view.onDidDispose(()=>{if(sidebar===view){sidebar=undefined;sidebarWebview=undefined;}views.delete(webview);});void refresh();}},{webviewOptions:{retainContextWhenHidden:true}}));
   const command=(name,fn)=>context.subscriptions.push(vscode.commands.registerCommand(name,async(...args)=>{try{return await fn(...args);}catch(error){vscode.window.showErrorMessage(error.message);}}));
+  command('agentGlue.fork',forkConversation);
+  command('agentGlue.webApps',showApps);
   command('agentGlue.showfiles',()=>handle({type:'resourceTab',tab:'files'},sidebarWebview));
   command('agentGlue.showtasks',()=>handle({type:'resourceTab',tab:'tasks'},sidebarWebview));
   command('agentGlue.showprs',()=>handle({type:'resourceTab',tab:'prs'},sidebarWebview));
@@ -399,8 +450,8 @@ function activate(context){
   });
   command('agentGlue.draft',openDraft);command('agentGlue.layout',layout);
   context.subscriptions.push(vscode.window.onDidChangeActiveTerminal(()=>{if(sidebar?.visible)void refresh();}));
-  const interval=setInterval(()=>{for(const [view,batch] of uploadBatches)if(Date.now()-batch.lastActivity>120000)uploadBatches.delete(view);void uploads.expire();if(sidebar?.visible)void refresh();},3000);
-  context.subscriptions.push({dispose(){clearInterval(interval);void uploads.close();for(const panel of panels.values())panel.dispose();draftPanel?.dispose();}});
+  const interval=setInterval(()=>{for(const [view,batch] of uploadBatches)if(Date.now()-batch.lastActivity>120000)uploadBatches.delete(view);void uploads.expire();if(sidebar?.visible||appsPanel?.visible)void refresh();},3000);
+  context.subscriptions.push({dispose(){clearInterval(interval);void uploads.close();for(const panel of panels.values())panel.dispose();draftPanel?.dispose();appsPanel?.dispose();}});
   // Reveal the companion on startup without taking keyboard focus from the editor or terminal.
   void vscode.commands.executeCommand('agentGlue.companion.focus',{preserveFocus:true}).catch(error=>{
     vscode.window.showErrorMessage(`Unable to open Agent Glue: ${error.message}`);

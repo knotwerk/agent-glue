@@ -4,3 +4,5 @@
 !extension.js
 !helpers/*.zsh
 !LICENSE.txt
+
+!fork.cjs
