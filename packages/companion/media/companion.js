@@ -211,15 +211,28 @@
         const row=element('details','task-item');row.dataset.taskKey=(state.selectedSessionId||'')+':'+task.id;row.open=expandedTasks.has(row.dataset.taskKey);
         const title=element('summary');
         const status=element('span','task-status task-'+task.status,{active:'●',blocked:'!',review:'◉',done:'✓'}[task.status]||'○');
-        status.title=task.status;status.setAttribute('aria-label',task.status);
-        title.append(element('span','task-chevron','›'),status,element('span','item-label',task.label),element('span','task-state-label',task.status));title.title=task.label;
+        const statusLabel={active:'In progress',blocked:'Needs help',review:'Ready for review',done:'Complete',unknown:'Not enough information'}[task.status]||'Not enough information';
+        status.title=statusLabel;status.setAttribute('aria-label',statusLabel);
+        title.append(element('span','task-chevron','›'),status,element('span','item-label',task.label),element('span','task-state-label',statusLabel));title.title=task.label;
         const updated=element('time','task-updated',relativeTime(task.updatedAt));
         updated.dateTime=task.updatedAt;updated.title='Last updated: '+new Date(task.updatedAt).toLocaleString();
         title.append(updated);row.append(title);
         const body=element('div','task-body');row.append(body);
-        const textSection=(label,text)=>{if(!text)return;const section=element('section','task-field');section.append(element('h3','',label),element('p','task-description',text));body.append(section);};
-        textSection('Progress',task.summary);
-        textSection(task.status==='blocked'?'Blocker / next step':'Next step',task.next);
+        const badge=element('p','task-progress-state',statusLabel);body.append(badge);
+        const textSection=(label,text,limit)=>{
+          if(!text)return;
+          const section=element('section','task-field');section.append(element('h3','',label));
+          const normalized=String(text).replace(/\s+/g,' ').trim();
+          if(normalized.length<=limit)section.append(element('p','task-description',normalized));
+          else{
+            const end=normalized.lastIndexOf(' ',limit);const preview=normalized.slice(0,end>limit/2?end:limit)+'…';
+            section.append(element('p','task-description',preview));
+            const more=element('details','task-section');more.dataset.sectionKey=row.dataset.taskKey+':'+label;more.open=expandedStatusSections.has(more.dataset.sectionKey);more.append(element('summary','','Read full '+label.toLowerCase()),element('p','task-description',text));section.append(more);
+          }
+          body.append(section);
+        };
+        textSection('Progress',task.summary||'No clear progress was visible in the latest update.',280);
+        textSection(task.status==='blocked'?'What is needed':'Up next',task.next,140);
         const disclosure=(key,label,values)=>{
           if(!values.length)return;
           const section=element('details','task-section');section.dataset.sectionKey=row.dataset.taskKey+':'+key;section.open=expandedStatusSections.has(section.dataset.sectionKey);
@@ -229,12 +242,12 @@
           body.append(section);
         };
         disclosure('files',`Files (${task.files?.length||0})`,task.files||[]);
-        disclosure('agents',`Agents (${task.agents?.length||0})`,task.agents||[]);
+        disclosure('agents',`Other agents (${task.agents?.length||0})`,task.agents||[]);
         disclosure('request','Original request',task.request?[task.request]:[]);
-        const meta=[task.source==='snapshot'?'Snapshot · not live activity':'Agent-reported',task.owner];
+        const meta=[task.source==='snapshot'?'Based on the last update, not live activity.':'Reported by the agent.',task.owner];
         if(Number.isSafeInteger(task.summaryTokens))meta.push('Refresh: '+task.summaryTokens.toLocaleString()+' tokens');
         if(Number.isSafeInteger(task.tokens))meta.push('Task: '+task.tokens.toLocaleString()+' reported tokens');
-        body.append(element('p','task-meta',meta.filter(Boolean).join(' · ')));
+        disclosure('technical','Update details',meta.filter(Boolean));
         fragment.append(row);
       }
       container.replaceChildren(fragment);

@@ -9,7 +9,7 @@ test('one-off summaries preserve account identity, use stdin and never resume co
  for(const profile of ['claudelp','codex2']){
   const calls=[];const source={id:'session',profile,name:'Example',cwd:'/original'};
   const report=await summarize(source,'x'.repeat(25000)+' SYNTHETIC_SNAPSHOT_ONLY',tempDir('status-runner'),{exec:async(cli,args,options)=>{calls.push({cli,args,options});return {stdout:args.includes('--help')?'--ignore-user-config --ephemeral --restricted --tools --no-session-persistence':cli==='claude'?claude:codex};}});
-  assert.equal(calls.length,2);const call=calls[1];assert.notEqual(call.options.cwd,source.cwd);assert.ok(call.options.input.includes('SYNTHETIC_SNAPSHOT_ONLY'));assert.ok(call.options.input.length<26000);
+  assert.equal(calls.length,2);const call=calls[1];assert.notEqual(call.options.cwd,source.cwd);assert.ok(call.options.input.includes('SYNTHETIC_SNAPSHOT_ONLY'));assert.ok(JSON.parse(call.options.input.slice(call.options.input.indexOf('{"terminal":'))).output.length<=24000);
   assert.ok(!call.args.some(a=>a==='resume'||a==='--resume'||a==='fork'));assert.ok(!call.args.some(a=>a.includes('SYNTHETIC_SNAPSHOT_ONLY')));
   assert.equal(call.options.env.TMUX,undefined);assert.equal(call.options.env.CODEX_THREAD_ID,undefined);
   assert.ok(call.options.env[profile==='codex2'?'CODEX_HOME':'CLAUDE_CONFIG_DIR'].endsWith('/.'+profile));

@@ -207,3 +207,14 @@ body[data-view="sidebar"] .note-input textarea { min-height:72px; max-height:non
 .task-section li { margin:3px 0; white-space:pre-wrap; }
 .task-done { color:var(--vscode-testing-iconPassed,#73c991); }
 .task-review { color:var(--vscode-editorWarning-foreground,#cca700); }
+
+.task-item[open] > summary { display:grid; grid-template-columns:10px 12px minmax(0,1fr) auto; align-items:start; row-gap:5px; }
+.task-item[open] > summary .item-label { grid-column:3 / -1; white-space:normal; overflow:visible; text-overflow:clip; overflow-wrap:anywhere; line-height:1.45; font-weight:600; }
+.task-item[open] > summary .task-state-label { display:none; }
+.task-item[open] > summary .task-updated { grid-column:3 / -1; margin-left:0; }
+.task-progress-state { margin:7px 0 10px; font-weight:600; font-size:12px; }
+.task-body { line-height:1.5; }
+.task-field h3 { font-size:12px; }
+.task-body .task-description { font-size:13px; margin-bottom:10px; }
+
+.task-state-label { max-width:85px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; flex-shrink:0; }

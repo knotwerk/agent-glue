@@ -153,8 +153,11 @@ Choose **Terminal Status** (pulse icon) in the sidebar toolbar to see what the s
 terminal is working on: the original user request, progress, blockers, affected
 files, and reported subagent activity. Newest reports appear first, including
 completed work. Each row starts collapsed with a status icon, short title, state
-and update age. Expand it for Progress and Next step, then drill into Files,
-Agents or Original request. Reports are snapshots, not live monitoring.
+and update age. Expand it to read the full title, a clear progress summary and
+what happens next. Summaries use short, self-contained plain English; progress
+is limited to 280 characters and the next step to 140 before a Read full control.
+Files, other agents, the original request and technical update details stay
+behind expandable sections. Reports are snapshots, not live monitoring.
 
 **🤖 Run** starts a separate, non-interactive Claude or Codex CLI call using the
 selected terminal’s account. It summarizes the last 500 visible terminal lines
