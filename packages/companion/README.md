@@ -154,10 +154,17 @@ terminal is working on: the original user request, progress, blockers, affected
 files, and reported subagent activity. Newest reports appear first, including
 completed work. Reports are snapshots with update times, not live monitoring.
 
-**Ask agent to update** prepares a request in that terminal. Press Enter to send;
-the response may use tokens. Refresh only reads local reports and uses no tokens.
-The button does not submit automatically or edit project instructions. For an
-ongoing convention, **Agent Glue: Install Agent Instructions** remains available.
+**🤖 Run** starts a separate, non-interactive Claude or Codex CLI call using the
+selected terminal’s account. It summarizes the last 500 visible terminal lines
+(up to 24,000 characters); it does not resume or send input into the active chat,
+index history, or edit project files. Missing context is reported as unknown.
+The call uses tokens, and its usage is labelled separately from original-task
+usage. A recent CLI version is required for isolated execution. Normal Refresh
+only reads saved reports and uses no tokens. Reports persist in VS Code workspace
+state; the panel remains usable while the robot runs.
+
+Existing agent-maintained records remain supported. For an ongoing convention,
+**Agent Glue: Install Agent Instructions** remains available.
 
 Agents write ignored JSON records under `.local/agent-glue/tasks/` at the Git
 project root, using a unique filename per terminal and user request. Fields:

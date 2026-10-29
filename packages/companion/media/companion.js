@@ -216,6 +216,8 @@
         updated.dateTime=task.updatedAt;updated.title='Last updated: '+new Date(task.updatedAt).toLocaleString();
         title.append(updated);row.append(title);
         row.append(element('p','task-meta',['Reported '+task.status,task.owner].filter(Boolean).join(' · ')));
+        if(task.source==='snapshot')row.append(element('p','task-meta','AI snapshot of recent terminal output · not live monitoring'));
+        if(Number.isSafeInteger(task.summaryTokens))row.append(element('p','task-meta','Status refresh: '+task.summaryTokens.toLocaleString()+' tokens'));
         if(task.request)row.append(element('p','task-description','Your request: '+task.request));
         if(task.summary)row.append(element('p','task-description',task.summary));
         if(task.next)row.append(element('p','task-description','Next: '+task.next));
@@ -225,7 +227,7 @@
         fragment.append(row);
       }
       container.replaceChildren(fragment);
-      byId('files-empty').textContent=state.resourceStatus||(items.length?'':(state.resourceItems||[]).length?'No reported work matches this filter.':'No status reported for this terminal yet. Ask agent to update prepares a request for you to send. Refresh only reads saved reports and uses no tokens.');
+      byId('files-empty').textContent=state.resourceStatus||(items.length?'':(state.resourceItems||[]).length?'No reported work matches this filter.':'No status reported for this terminal yet. Run the status robot to summarize recent terminal output with a one-off CLI call. This uses tokens; ordinary Refresh does not.');
       byId('files-empty').hidden=items.length>0&&!state.resourceStatus;
       return;
     }
@@ -587,6 +589,7 @@
       state = { sessions: [], files: [], draft: {}, uploads: [], ...message.state };
       const fileState=JSON.stringify([Math.floor(Date.now()/60000),state.selectedSessionId,state.sessions,state.files,state.filesMessage,state.resourceTab,state.prFilter,state.resourceItems,state.resourceStatus,state.resourceFolder,state.resourceGeneration]);
       if(fileState!==lastFileState){lastFileState=fileState;renderFiles();}
+      const robot=byId('task-instructions');if(robot){robot.disabled=Boolean(state.statusRunBusy);robot.textContent=state.statusRunBusy?'🤖 Running…':'🤖 Run';}
       renderWebApps();
       renderDraft();
       renderUploads();

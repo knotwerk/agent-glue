@@ -79,10 +79,10 @@ on macOS, dictation and clipboard images.
 - **See what this terminal is doing.** **Terminal Status** (pulse icon) in the sidebar toolbar shows
   the user request, reported progress, affected files, blockers and subagent activity
   for the selected terminal. Reports show their update time; token counts appear
-  only when the agent has exact per-request usage. **Ask agent to update** prepares
-  a request for you to send (which may use tokens). Refresh reads saved reports
-  without contacting an AI.
-  You press Enter; it does not submit automatically.
+  only when the agent has exact per-request usage. **🤖 Run** makes a one-off CLI call using the terminal’s agent account to
+  summarize recent visible output, without messaging the active conversation.
+  This uses tokens; the refresh’s usage is shown separately when available.
+  Ordinary Refresh reads saved reports without contacting an AI.
 - **Send a clear note.** Write or dictate, attach a file or screenshot, then paste
   into the selected terminal. Check the recipient and press Enter yourself.
 
@@ -191,7 +191,7 @@ permission-bypass flags or manage your credentials.
 | --- | --- |
 | Files | Click to open; right-click to download or copy the path. Recent ↓ uses mentions or edits; the small timestamp shows disk modification time. Show more expands 20 files at a time, up to 100 recents. |
 | PRs | Click a name to open its review; expand the chevron for files. The right-hand dot marks read/unread; blue indicates new comments. **Leave comment** saves locally for prepared reviews, or posts to GitHub for hosted PRs. |
-| Status (pulse icon) | **Ask agent to update**, then send the prepared request. Reports are per terminal and show their last update; they are not live process activity. |
+| Status (pulse icon) | **🤖 Run** summarizes recent terminal output through a separate CLI call. Uses tokens; reports are timestamped snapshots, not live process activity. |
 | Terminal tab | Right-click → **Agent Glue: Fork Conversation**; confirm or browse to the new terminal’s folder. |
 | Web apps (above Files) | Open a running app; right-click for browser/copy options. **All** lists apps across terminals. |
 | Note | Choose a recipient, attach files, and paste. The microphone and clipboard-image actions use the local Mac helper. |
@@ -205,7 +205,7 @@ if it has scrolled away. **Choose Session** handles an unmatched terminal.
 
 Agent Glue runs with the extension host's permissions. It does not index CLI
 conversation histories or provide a sandbox for untrusted projects. Recent paths,
-notes and selections persist in VS Code workspace state. Task and local review
+notes, status snapshots and selections persist in VS Code workspace state. Task and local review
 records stay in the project's ignored local directory.
 
 Native open/download actions use VS Code's connection. Optional **Open in browser**

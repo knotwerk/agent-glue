@@ -292,7 +292,7 @@ test('browser: resource icons, PR filters and local PR document links work witho
   assert.equal(await page.locator('.task-item .item-label').textContent(),'Finished work');
   await page.getByLabel('Filter terminal status').selectOption('all');
   assert.equal(await page.locator('.task-item').count(),2);
-  await page.getByRole('button',{name:'Ask agent to update',exact:true}).click();
+  await page.getByRole('button',{name:'Run status robot',exact:true}).click();
   assert.ok(await page.evaluate(()=>window.sent.some(m=>m.type==='setupTasks')));
   await setState({resourceTab:'prs',prFilter:'priority',resourceItems:[{id:'pr',url:'https://github.com/a/b/pull/3',label:'#3 Example',newComments:true}],draft:{}});
   assert.equal(await page.locator('#resource-controls').isVisible(),true);

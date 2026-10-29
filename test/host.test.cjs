@@ -114,7 +114,7 @@ async function start(t, { sessions, capture = 'Wrote docs/plan.md and ./notes.ht
   const saved = { sessions: core.sessions, run: core.run };
   core.sessions = async () => (sessions ? sessions(project) : [session(project)]);
   core.run = async (cmd, args) => { calls.push([cmd, args]); return { stdout: capture }; };
-  const context = { subscriptions: [], workspaceState: memento(), globalState: memento(), extensionUri: { fsPath: companionDir }, extensionPath: companionDir };
+  const context = { globalStorageUri:{fsPath:path.join(project,'.status-storage')}, subscriptions: [], workspaceState: memento(), globalState: memento(), extensionUri: { fsPath: companionDir }, extensionPath: companionDir };
   extension.activate(context);
   t.after(async () => { for (const s of context.subscriptions) await s.dispose?.(); core.sessions = saved.sessions; core.run = saved.run; });
   return { ...h, project, context, calls };
@@ -883,19 +883,29 @@ test('Tasks command reads the selected project and refreshes agent progress inde
  assert.equal(lastState(view).resourceTab,'files');
 });
 
-test('task setup pastes trusted instructions into the selected terminal without submitting or editing files',async t=>{
- const sent=[];
+test('status robot makes one isolated request, preserves drafts, and does not paste into the agent',async t=>{
+ const runner=require('../packages/companion/src/status-runner.cjs'),original=runner.summarize;t.after(()=>{runner.summarize=original;});
+ const calls=[],sent=[];let finish;
+ runner.summarize=(...args)=>{calls.push(args);return new Promise(resolve=>{finish=resolve;});};
  const terminal={sessionName:'claude-main',show(){},sendText:(...args)=>sent.push(args)};
  const api={refresh:async()=>{},sessionForTerminal:t=>t?.sessionName,terminalForSession:()=>terminal};
  const env=await start(t,{sessionsApi:api});env.vscode.window.activeTerminal=terminal;
  const view=await openSidebar(env);await settle(view);
  await view.send({type:'editDraft',text:'Keep my note'});
- await view.send({type:'setupTasks',text:'untrusted'});
- const {terminalStatusPrompt}=require('../packages/companion/src/instructions.cjs');
- assert.deepEqual(sent,[['\x1b[200~'+terminalStatusPrompt(session(env.project))+'\x1b[201~',false]]);
- assert.equal(lastState(view).draft.text,'Keep my note');
- assert.equal(fs.existsSync(path.join(env.project,'CLAUDE.md')),false);
- assert.match(lastState(view).status,/Press Enter/);
+ await env.log.commands.get('agentGlue.showtasks')();await settle(view);
+ const pending=view.send({type:'setupTasks',text:'untrusted'});
+ for(let i=0;i<200&&!finish;i++)await new Promise(r=>setTimeout(r,5));
+ assert.ok(finish,'status runner started: '+lastState(view).status);
+ assert.equal(lastState(view).statusRunBusy,true);
+ await view.send({type:'setupTasks'});assert.equal(calls.length,1);
+ await view.send({type:'editDraft',text:'Keep my note'});
+ assert.equal(calls[0][0].sessionName,'claude-main');assert.match(calls[0][1],/Wrote docs/);assert.ok(!calls[0][1].includes('untrusted'));
+ finish({id:'snapshot:$1',label:'Status result',status:'active',summary:'Testing',updatedAt:new Date().toISOString(),source:'snapshot',summaryTokens:100});await pending;
+ await waitFor(view,()=>lastState(view).resourceItems.some(r=>r.label==='Status result'),'robot result');
+ assert.deepEqual(sent,[]);assert.equal(lastState(view).draft.text,'Keep my note');assert.equal(lastState(view).statusRunBusy,false);
+ assert.equal(env.context.workspaceState.get('statusReports')['$1'].summaryTokens,100);
+ runner.summarize=async()=>{throw Error('Synthetic failure');};await view.send({type:'setupTasks'});
+ assert.equal(env.context.workspaceState.get('statusReports')['$1'].label,'Status result');assert.equal(lastState(view).statusRunBusy,false);
 });
 
 test('web app actions forward client links and open in the main editor, with external alternative',async t=>{

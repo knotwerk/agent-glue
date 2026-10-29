@@ -16,6 +16,7 @@ function activate(context){
   const views=new Set(),panels=new Map(),uploads=new core.Uploads();
   const browserLinks=new BrowserLinks({mermaidPath:path.join(context.extensionPath,'dist/mermaid.js')});
   context.subscriptions.push(browserLinks);
+  const statusReports=context.workspaceState.get('statusReports',{});let statusRunBusy=false;
   const apps=new WebApps(core.run);let appsPanel,appsSignature,forkBusy=false;
   let sidebar,sidebarWebview,draftPanel,draftWebview,sessionList=[],selected=context.workspaceState.get('selected'),files=context.workspaceState.get('files',{});
   // Recover files hidden with the removed sidebar action; honor explicit [remove] directives.
@@ -94,6 +95,24 @@ function activate(context){
     else appsPanel.reveal(await mainEditorColumn(vscode));
     await apps.refresh(await core.sessions(),true);renderAppsPanel();
   }
+  async function runStatus(){
+    if(statusRunBusy)return;
+    statusRunBusy=true;publish();
+    try{
+      await refresh();
+      const source=byId(selected),active=vscode.window.activeTerminal;
+      if(!source||!sidebar?.visible)throw Error('Select an agent terminal and open Agent Glue before running status.');
+      const {stdout}=await core.run('tmux',['capture-pane','-p','-J','-t',source.pane,'-S','-500'],{maxBuffer:1024*1024});
+      if(selected!==source.id||active!==vscode.window.activeTerminal||!sidebar?.visible)throw Error('Selected terminal changed. Run status again.');
+      status='Summarizing '+source.name+'…';publish();
+      const report=await require('./status-runner.cjs').summarize({...source},stdout,path.join(context.globalStorageUri.fsPath,'status-runs'));
+      statusReports[source.id]=report;
+      const oldest=Object.keys(statusReports).sort((a,b)=>statusReports[b].updatedAt.localeCompare(statusReports[a].updatedAt));for(const id of oldest.slice(100))delete statusReports[id];
+      await context.workspaceState.update('statusReports',statusReports);
+      status='Status updated for '+source.name+'.';
+      if(selected===source.id&&resourceTab==='tasks')loadResources(true);
+    }finally{statusRunBusy=false;publish();}
+  }
   async function forkConversation(target){
     if(forkBusy)return;
     forkBusy=true;
@@ -121,7 +140,7 @@ function activate(context){
   let queue=Promise.resolve();
   const byId=id=>sessionList.find(s=>s.id===id);
   const save=async()=>{await context.workspaceState.update('files',files);await context.workspaceState.update('draft',draft);await context.workspaceState.update('selected',selected);};
-  const state=()=>({webApps:apps.items.filter(item=>item.sessionId===selected).map(item=>({...item,label:appLabel(item.url)})),webAppsActiveTotal:apps.items.filter(item=>item.running).length,sessions:sessionList,selectedSessionId:selected,filesMessage:byId(selected)?`No existing files found in the recent terminal output for ${byId(selected).name}.`:'No matching agent session for the selected terminal. Select an attached agent terminal or use Choose Session in the view menu.',resourceTab,prFilter,prSort,prReadFilter,resourceItems:visibleResources(),resourceStatus,resourceGeneration,resourceFolder:resourceRoot||byId(selected)?.cwd||'',files:(files[selected]||[]).filter(f=>!f.hidden&&!f.missing),draft,status:status||connectionStatus});
+  const state=()=>({statusRunBusy,webApps:apps.items.filter(item=>item.sessionId===selected).map(item=>({...item,label:appLabel(item.url)})),webAppsActiveTotal:apps.items.filter(item=>item.running).length,sessions:sessionList,selectedSessionId:selected,filesMessage:byId(selected)?`No existing files found in the recent terminal output for ${byId(selected).name}.`:'No matching agent session for the selected terminal. Select an attached agent terminal or use Choose Session in the view menu.',resourceTab,prFilter,prSort,prReadFilter,resourceItems:visibleResources(),resourceStatus,resourceGeneration,resourceFolder:resourceRoot||byId(selected)?.cwd||'',files:(files[selected]||[]).filter(f=>!f.hidden&&!f.missing),draft,status:status||connectionStatus});
   const post=(view,message)=>{try{void Promise.resolve(view.postMessage(message)).catch(()=>views.delete(view));}catch{views.delete(view);}};
   const publish=()=>{for(const view of views)post(view,{type:'state',state:state()});};
   function loadResources(force=false){
@@ -140,6 +159,7 @@ function activate(context){
     void resources.list(resourceTab,cwd,{filter:prFilter,session:byId(selected)}).then(result=>{
       if(generation!==resourceGeneration)return;
       resourceRoot=result.root;
+      if(resourceTab==='tasks'&&statusReports[selected])result={...result,items:[statusReports[selected],...result.items].sort((a,b)=>b.updatedAt.localeCompare(a.updatedAt))};
       resourceItems=result.items.map(item=>({...item,newComments:item.commentAt&&item.commentAt>(prSeen[item.id]||new Date(Date.now()-7*86400000).toISOString())}));
       if(resourceTab==='prs')resourceItems=resources.sortItems(resourceItems,prSort);
       resourceStatus=result.warning||'';publish();
@@ -303,7 +323,6 @@ function activate(context){
       case 'ready':await refresh();if(message.clientPlatform==='mac')await ensureDictation();publish();if(view===draftWebview)post(view,{type:'focusDraft'});break;
       case 'refresh':cleared.delete(selected);await refresh();loadResources(true);break;
       case 'resourceTab':if(['files','prs','tasks'].includes(message.tab)){resourceTab=message.tab;loadResources();}break;
-      case 'setupTasks':await discussReview(require('./instructions.cjs').terminalStatusPrompt);status='Status request pasted. Press Enter to send; the agent response may use tokens.';break;
       case 'prFilter':if(resources.filters[message.filter]!==undefined){prFilter=message.filter;await context.workspaceState.update('prFilter',prFilter);loadResources();}break;
       case 'prSort':if(['title','number','updated','priority'].includes(message.sort)){prSort=message.sort;resourceItems=resources.sortItems(resourceItems,prSort);await context.workspaceState.update('prSort',prSort);}break;
       case 'prReadFilter':if(['all','unread'].includes(message.filter)){prReadFilter=message.filter;await context.workspaceState.update('prReadFilter',prReadFilter);}break;
@@ -420,7 +439,7 @@ function activate(context){
     views.add(view);
     view.options={enableScripts:true,localResourceRoots:[vscode.Uri.joinPath(context.extensionUri,'media')]};
     view.html=(isDraft?renderDraft:renderSidebar)({nonce:crypto.randomBytes(20).toString('hex'),cspSource:view.cspSource,scriptUri:view.asWebviewUri(vscode.Uri.joinPath(context.extensionUri,'media/companion.js')),styleUri:view.asWebviewUri(vscode.Uri.joinPath(context.extensionUri,'media/companion.css'))});
-    context.subscriptions.push(view.onDidReceiveMessage(message=>{queue=queue.then(()=>handle(message,view)).catch(async error=>{status=error.message;if(['previewFile','openReviewFile','openResource','fileMenu','fileAction'].includes(message.type))vscode.window.showErrorMessage('Agent Glue: '+error.message);try{await save();}catch{}publish();});return queue;}));
+    context.subscriptions.push(view.onDidReceiveMessage(message=>{if(message?.type==='setupTasks')return runStatus().catch(error=>{status=error.message;publish();});queue=queue.then(()=>handle(message,view)).catch(async error=>{status=error.message;if(['previewFile','openReviewFile','openResource','fileMenu','fileAction'].includes(message.type))vscode.window.showErrorMessage('Agent Glue: '+error.message);try{await save();}catch{}publish();});return queue;}));
   }
   context.subscriptions.push(vscode.window.registerWebviewViewProvider('agentGlue.companion',{resolveWebviewView(view){sidebar=view;const webview=view.webview;sidebarWebview=webview;setup(webview,false);view.onDidChangeVisibility(()=>{if(view.visible)void refresh();});view.onDidDispose(()=>{if(sidebar===view){sidebar=undefined;sidebarWebview=undefined;}views.delete(webview);});void refresh();}},{webviewOptions:{retainContextWhenHidden:true}}));
   const command=(name,fn)=>context.subscriptions.push(vscode.commands.registerCommand(name,async(...args)=>{try{return await fn(...args);}catch(error){vscode.window.showErrorMessage(error.message);}}));

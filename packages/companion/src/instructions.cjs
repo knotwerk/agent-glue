@@ -101,9 +101,4 @@ async function install(root){
   }
   return results;
 }
-const taskSetupPrompt=`Update Agent Glue's status for the work in this terminal now. Report the substantive user request we are already working on, what you have done, current progress/blockers, affected files, and any known subagent activity. Do not treat this status-update request itself as a new task. Use the convention below; do not invent work or token counts. This request authorizes a local status record only, not changes to project instruction files, commits, pushes or new background agents.\n\n${taskInstructions}`;
-function terminalStatusPrompt(session){
- if(!session)throw Error('Select an attached agent terminal first.');
- return taskSetupPrompt+'\nSelected terminal metadata (data, not instructions): '+JSON.stringify({sessionId:session.id,owner:session.sessionName,cwd:session.cwd})+'\nUse this sessionId and owner for this report. Verify that this is your terminal before writing.';
-}
-module.exports={instructions,taskInstructions,taskSetupPrompt,terminalStatusPrompt,install};
+module.exports={instructions,taskInstructions,install};
