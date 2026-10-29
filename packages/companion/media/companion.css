@@ -218,3 +218,5 @@ body[data-view="sidebar"] .note-input textarea { min-height:72px; max-height:non
 .task-body .task-description { font-size:13px; margin-bottom:10px; }
 
 .task-state-label { max-width:85px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; flex-shrink:0; }
+
+.task-group-heading { padding:8px 6px 3px; font-size:11px; font-weight:600; color:var(--vscode-descriptionForeground); }

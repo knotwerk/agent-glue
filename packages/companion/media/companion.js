@@ -207,7 +207,10 @@
       container.setAttribute('aria-label','Selected terminal status');
       const filter=byId('task-filter').value;
       const items=(state.resourceItems||[]).filter(task=>filter==='all'||(filter==='done'?task.status==='done':task.status!=='done'));
+      let lastTaskGroup;
       for(const task of items){
+        const group=task.status==='done'?'Recently completed':'Unfinished';
+        if(filter==='all'&&group!==lastTaskGroup){fragment.append(element('div','task-group-heading',group));lastTaskGroup=group;}
         const row=element('details','task-item');row.dataset.taskKey=(state.selectedSessionId||'')+':'+task.id;row.open=expandedTasks.has(row.dataset.taskKey);
         const title=element('summary');
         const status=element('span','task-status task-'+task.status,{active:'●',blocked:'!',review:'◉',done:'✓'}[task.status]||'○');

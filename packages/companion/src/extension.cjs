@@ -105,7 +105,11 @@ function activate(context){
       const {stdout}=await core.run('tmux',['capture-pane','-p','-J','-t',source.pane,'-S','-500'],{maxBuffer:1024*1024});
       if(selected!==source.id||active!==vscode.window.activeTerminal||!sidebar?.visible)throw Error('Selected terminal changed. Run status again.');
       status='Summarizing '+source.name+'…';publish();
-      const report=await require('./status-runner.cjs').summarize({...source},stdout,path.join(context.globalStorageUri.fsPath,'status-runs'));
+      const runner=require('./status-runner.cjs');
+      const local=await resources.list('tasks',source.cwd,{session:source});
+      if(selected!==source.id||active!==vscode.window.activeTerminal||!sidebar?.visible)throw Error('Selected terminal changed. Run status again.');
+      const previous={items:runner.combine(statusReports[source.id],local.items)};
+      const report=await runner.summarize({...source},stdout,path.join(context.globalStorageUri.fsPath,'status-runs'),{previous});
       statusReports[source.id]=report;
       const oldest=Object.keys(statusReports).sort((a,b)=>statusReports[b].updatedAt.localeCompare(statusReports[a].updatedAt));for(const id of oldest.slice(100))delete statusReports[id];
       await context.workspaceState.update('statusReports',statusReports);
@@ -159,7 +163,7 @@ function activate(context){
     void resources.list(resourceTab,cwd,{filter:prFilter,session:byId(selected)}).then(result=>{
       if(generation!==resourceGeneration)return;
       resourceRoot=result.root;
-      if(resourceTab==='tasks'&&statusReports[selected])result={...result,items:[statusReports[selected],...result.items].sort((a,b)=>b.updatedAt.localeCompare(a.updatedAt))};
+      if(resourceTab==='tasks'){const {combine,visible}=require('./status-runner.cjs');result={...result,items:visible(combine(statusReports[selected],result.items))};}
       resourceItems=result.items.map(item=>({...item,newComments:item.commentAt&&item.commentAt>(prSeen[item.id]||new Date(Date.now()-7*86400000).toISOString())}));
       if(resourceTab==='prs')resourceItems=resources.sortItems(resourceItems,prSort);
       resourceStatus=result.warning||'';publish();

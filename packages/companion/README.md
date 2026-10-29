@@ -151,8 +151,10 @@ files, not a scan of the project; up to 100 recent files are retained.
 
 Choose **Terminal Status** (pulse icon) in the sidebar toolbar to see what the selected
 terminal is working on: the original user request, progress, blockers, affected
-files, and reported subagent activity. Newest reports appear first, including
-completed work. Each row starts collapsed with a status icon, short title, state
+files, and reported subagent activity. The default list keeps all unfinished
+work plus the three most recently completed tasks. Robot refreshes update matching
+tasks and append newly discovered work; tasks missing from the latest terminal
+output remain in the list. Unfinished rows keep their order. Each row starts collapsed with a status icon, short title, state
 and update age. Expand it to read the full title, a clear progress summary and
 what happens next. Summaries use short, self-contained plain English; progress
 is limited to 280 characters and the next step to 140 before a Read full control.
@@ -161,7 +163,7 @@ behind expandable sections. Reports are snapshots, not live monitoring.
 
 **🤖 Run** starts a separate, non-interactive Claude or Codex CLI call using the
 selected terminal’s account. It summarizes the last 500 visible terminal lines
-(up to 24,000 characters); it does not resume or send input into the active chat,
+(up to 24,000 characters), together with the saved task list; it does not resume or send input into the active chat,
 index history, or edit project files. Missing context is reported as unknown.
 The call uses tokens, and its usage is labelled separately from original-task
 usage. A recent CLI version is required for isolated execution. Normal Refresh

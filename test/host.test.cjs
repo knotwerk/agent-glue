@@ -900,12 +900,12 @@ test('status robot makes one isolated request, preserves drafts, and does not pa
  await view.send({type:'setupTasks'});assert.equal(calls.length,1);
  await view.send({type:'editDraft',text:'Keep my note'});
  assert.equal(calls[0][0].sessionName,'claude-main');assert.match(calls[0][1],/Wrote docs/);assert.ok(!calls[0][1].includes('untrusted'));
- finish({id:'snapshot:$1',label:'Status result',status:'active',summary:'Testing',updatedAt:new Date().toISOString(),source:'snapshot',summaryTokens:100});await pending;
+ finish({items:[{id:'task:result',label:'Status result',status:'active',summary:'Testing',updatedAt:new Date().toISOString(),source:'snapshot'}],updatedAt:new Date().toISOString(),summaryTokens:100});await pending;
  await waitFor(view,()=>lastState(view).resourceItems.some(r=>r.label==='Status result'),'robot result');
  assert.deepEqual(sent,[]);assert.equal(lastState(view).draft.text,'Keep my note');assert.equal(lastState(view).statusRunBusy,false);
  assert.equal(env.context.workspaceState.get('statusReports')['$1'].summaryTokens,100);
  runner.summarize=async()=>{throw Error('Synthetic failure');};await view.send({type:'setupTasks'});
- assert.equal(env.context.workspaceState.get('statusReports')['$1'].label,'Status result');assert.equal(lastState(view).statusRunBusy,false);
+ assert.equal(env.context.workspaceState.get('statusReports')['$1'].items[0].label,'Status result');assert.equal(lastState(view).statusRunBusy,false);
 });
 
 test('web app actions forward client links and open in the main editor, with external alternative',async t=>{
