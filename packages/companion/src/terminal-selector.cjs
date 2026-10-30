@@ -72,6 +72,7 @@ function registerSelector(vscode,context,sessionForTerminal=()=>undefined,status
  const hideSafely=()=>{if(tree.visible)void hideNative().catch(()=>{});};
  hideSafely();
  context.subscriptions.push(changed,tree,
+  vscode.commands.registerCommand('agentGlue.newSelectorTerminal',()=>vscode.commands.executeCommand('workbench.action.terminal.newWithProfile')),
   vscode.commands.registerCommand('agentGlue.focusSelectorTerminal',terminal=>{if(isOpen(terminal))terminal.show(false);}),
   vscode.commands.registerCommand('agentGlue.splitSelectorTerminal',terminal=>{
    if(!isOpen(terminal))return;

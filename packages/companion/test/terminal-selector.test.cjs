@@ -24,6 +24,18 @@ test('selector placement is explicit and reversible; refresh never steals termin
  await h.commands.get('agentGlue.resetTerminalSelector')();assert.equal(h.calls.at(-1)[1].destinationId,'workbench.view.extension.agentGlueSelector');
 });
 
+test('new terminal toolbar action opens the native profile picker without creating a default shell',async()=>{
+ const h=host();
+ h.vscode.window.createTerminal=()=>assert.fail('The native profile picker owns creation');
+ await h.commands.get('agentGlue.newSelectorTerminal')();
+ assert.deepEqual(h.calls,[['workbench.action.terminal.newWithProfile']]);
+ const manifest=require('../package.json');
+ assert.equal(manifest.contributes.commands.find(c=>c.command==='agentGlue.newSelectorTerminal').icon,'$(add)');
+ const menu=manifest.contributes.menus['view/title'].find(c=>c.command==='agentGlue.newSelectorTerminal');
+ assert.equal(menu.when,'view == agentGlue.terminalSelector');
+ assert.match(menu.group,/^navigation/);
+});
+
  test('row controls target exact objects and preserve order across registration',async()=>{
  const h=host();let split;
  h.vscode.window.createTerminal=options=>{split=options;return {show(){}};};

@@ -5,11 +5,11 @@ const fs=require('node:fs');
 const path=require('node:path');
 const vm=require('node:vm');
 function host(options={}){
- const commands=new Map(),listeners={},calls=[],terminals=options.terminals||[];
+ const commands=new Map(),listeners={},calls=[],messages=[],terminals=options.terminals||[];
  let session='claude-fixture-20261014_120000',title='Fixture agent';
  const dispose=()=>({dispose(){}});
  const context={subscriptions:[],globalStorageUri:{fsPath:'/fake/storage'},globalState:{update:async()=>{}}};
- const vscode={workspace:{isTrusted:true,workspaceFolders:[{uri:{fsPath:'/fixture/workspace'}}]},extensions:{all:[]},commands:{registerCommand:(name,fn)=>{commands.set(name,fn);return dispose();}},tasks:{registerTaskProvider:(name,provider)=>{listeners.tasks=provider;return dispose();}},TaskScope:{Workspace:1},Task:class{constructor(...args){this.args=args;}},ProcessExecution:class{constructor(...args){this.args=args;}},window:{terminals,showInformationMessage(){},showWarningMessage(){},onDidChangeTerminalState:fn=>{listeners.change=fn;return dispose();},onDidCloseTerminal:fn=>{listeners.close=fn;return dispose();},createTerminal:options=>{const terminal={...options,processId:Promise.resolve(42),dispose(){throw new Error('Unexpected terminal destruction');}};terminals.push(terminal);return terminal;}}};
+ const vscode={workspace:{isTrusted:true,workspaceFolders:[{uri:{fsPath:'/fixture/workspace'}}]},extensions:{all:[]},commands:{registerCommand:(name,fn)=>{commands.set(name,fn);return dispose();}},tasks:{registerTaskProvider:(name,provider)=>{listeners.tasks=provider;return dispose();}},TaskScope:{Workspace:1},Task:class{constructor(...args){this.args=args;}},ProcessExecution:class{constructor(...args){this.args=args;}},window:{terminals,showInformationMessage(message){messages.push(message);},showWarningMessage(){},onDidChangeTerminalState:fn=>{listeners.change=fn;return dispose();},onDidCloseTerminal:fn=>{listeners.close=fn;return dispose();},createTerminal:options=>{const terminal={...options,processId:Promise.resolve(42),dispose(){throw new Error('Unexpected terminal destruction');}};terminals.push(terminal);return terminal;}}};
  const child={
   exec(command,callback){calls.push(command);let stdout='';if(command.includes('list-sessions'))stdout=options.sessions?.()||[session,title,'','1700000000'].join('\x1f')+'\n';if(command.includes('list-clients'))stdout=options.clients?.()||'';if(command.startsWith('ps '))stdout=options.processes?.()||'';callback(null,stdout,'');},
   execFile(file,args,options,callback){if(typeof options==='function')callback=options;calls.push({file,args,options});let stdout='';if(file==='tmux'&&args[0]==='display-message')stdout='/fixture/actual-agent-project\n';if(file.endsWith('agent-tmux-rename.zsh')){session='claude-renamed-20261014_120000';title=args[1];stdout=session+'\n';}callback(null,stdout,'');}
@@ -19,7 +19,7 @@ function host(options={}){
  const sandbox={module:{exports:{}},require:name=>name==='vscode'?vscode:name==='child_process'?child:require(name),__dirname:path.resolve(__dirname,'..'),console,process,Date:options.Date||Date,setInterval:()=>1,clearInterval(){}};
  vm.runInNewContext(fs.readFileSync(path.join(__dirname,'../extension.js'),'utf8'),sandbox);
  const api=sandbox.module.exports.activate(context);
- return {api,vscode,context,calls,listeners,terminals};
+ return {api,vscode,context,calls,listeners,terminals,messages,commands};
 }
 test('Sessions attaches once and resolves exact session identity, not a similar title',async()=>{
  const h=host();await h.api.refresh();await h.api.refresh();
@@ -119,4 +119,12 @@ test('detached session attaches after an unrelated matching shell changes its ti
  const h=host({terminals:[original],sessions:()=>['codex-calm-spark','calm-spark','','1700000000','$7','500'].join('\x1f')+'\n'});
  await h.api.refresh();assert.equal(h.terminals.length,1);
  original.name='zsh';await h.api.refresh();assert.equal(h.terminals.length,2);
+});
+
+
+test('automatic restoration is quiet; explicit Attach still reports its result',async()=>{
+ const h=host();await h.api.refresh();
+ assert.deepEqual(h.messages,[]);
+ h.commands.get('tmuxClaude.attachAll')();await h.api.refresh();
+ assert.deepEqual(h.messages,['No new agent tmux sessions to attach']);
 });

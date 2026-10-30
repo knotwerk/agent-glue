@@ -221,7 +221,10 @@ configuration. No terminal is restarted automatically.
 
 The observer only stores event names, timestamps, session IDs and tmux identity
 under Companion's global storage. It discards prompt text, tool payloads and
-transcript paths and does not read CLI history. Each pane has fixed event slots.
+transcript paths and does not read CLI history. Each pane has fixed event slots:
+atomic writes retain the latest event of each type, not an append-only history.
+Current status is derived from those slots; earlier events of the same type are
+replaced. This is a status cache, not a durable audit log.
 Background status works while Terminals is visible, using a three-second local
 metadata refresh. Missing hooks show unknown; subagent events are not used to
 invent a live helper count. No status update makes an AI call.
@@ -242,6 +245,8 @@ workbench `vscode.moveViews` command and needs desktop acceptance testing. Use
 **Agent Glue: Move Terminal Selector Back** to return it to its separate panel;
 the selector view can also be hidden through its view menu.
 
+The **+** in the Terminals toolbar opens VS Code's native terminal-profile picker.
+Choose from your configured shell and CLI profiles; cancelling creates nothing.
 The **Terminals** list supports hover actions for Fork Conversation (on mapped agent sessions) and Split (a new shell beside the
 chosen terminal). It deliberately has no Close action. Drag rows to reorder;
 the order is saved per workspace using tmux session names where known. Ordinary

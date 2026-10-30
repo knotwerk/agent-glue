@@ -1,5 +1,5 @@
 {
-  "version": "0.1.72",
+  "version": "0.1.73",
   "activationEvents": [
     "onStartupFinished"
   ],
@@ -109,6 +109,11 @@
         "command": "agentGlue.enableLiveStatus",
         "title": "Agent Glue: Enable Live Terminal Status",
         "icon": "$(pulse)"
+      },
+      {
+        "command": "agentGlue.newSelectorTerminal",
+        "title": "New Terminal (Choose Profile)",
+        "icon": "$(add)"
       }
     ],
     "viewsContainers": {
@@ -201,6 +206,11 @@
           "command": "agentGlue.enableLiveStatus",
           "when": "view == agentGlue.terminalSelector",
           "group": "2_status"
+        },
+        {
+          "command": "agentGlue.newSelectorTerminal",
+          "when": "view == agentGlue.terminalSelector",
+          "group": "navigation@1"
         }
       ],
       "terminal/title/context": [

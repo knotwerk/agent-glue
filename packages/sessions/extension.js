@@ -500,7 +500,7 @@ function activate(context) {
         })
     );
 
-    void schedule('startup', () => attachSessions({ quiet: false }));
+    void schedule('startup', () => attachSessions({ quiet: true }));
 
     const renamePoll = setInterval(() => {
         void schedule('renamePoll', () => persistTerminalRename(vscode.window.activeTerminal));
