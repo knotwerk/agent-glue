@@ -20,6 +20,11 @@ const DISCOVERY_OPTIONS = { timeout: 1500, maxBuffer: 4 * 1024 * 1024 };
 // registers as a tmux client. Give that client two attach polls to appear.
 const NEW_SESSION_GRACE_MS = 10000;
 const TITLE_OVERRIDES_KEY = 'agentTmuxRestore.titleOverrides';
+const ATTACHMENTS_KEY = 'agentTmuxRestore.attachments.v1';
+const ATTACHMENT_ENV = 'AGENT_GLUE_ATTACHMENT_TOKEN';
+const MAX_ATTACHMENTS = 1000;
+const validToken = value => typeof value === 'string' && /^[a-f0-9-]{36}$/.test(value);
+const validIdentity = value => typeof value === 'string' && /^\d+:\$\d+:\d+$/.test(value);
 const GENERIC_TERMINAL_NAMES = new Set([
     'agent-tmux-attach',
     'agent-tmux-attach-zsh',
@@ -43,6 +48,8 @@ const terminalNames = new Map();
 const terminalPids = new WeakMap();
 let sessionTerminals = new Map();
 let taskOutput;
+let attachmentState;
+let attachments = new Map();
 const lastKnownNames = new Map();
 
 let operationQueue = Promise.resolve();
@@ -242,6 +249,36 @@ function authoritativeTitle(item) {
     return normalizeName(item?.userNamed || item?.title || nameFromSession(item?.session));
 }
 
+function attachmentIdentity(terminal) {
+    const options = terminal.creationOptions;
+    // An inherited environment variable in an ordinary shell is not evidence
+    // that this tab was created by our attach helper.
+    if (typeof options?.shellPath !== 'string' || path.basename(options.shellPath) !== 'agent-tmux-attach.zsh') return;
+    const token = options.env?.[ATTACHMENT_ENV];
+    return validToken(token) ? attachments.get(token) : undefined;
+}
+
+function rememberAttachments(items) {
+    const tokens = new Map();
+    const next = new Map(attachments);
+    for (const item of items) {
+        if (!validIdentity(item.identity)) continue;
+        const token = require('crypto').randomUUID();
+        next.set(token, item.identity);
+        tokens.set(item.session, token);
+    }
+    if (!tokens.size) return tokens;
+    while (next.size > MAX_ATTACHMENTS) next.delete(next.keys().next().value);
+    attachments = next;
+    try {
+        // One background write per batch, never another startup dependency.
+        // If it fails or a reload races it, missing tokens use PID discovery.
+        void Promise.resolve(attachmentState.update(ATTACHMENTS_KEY, [...next]))
+            .catch(error => warn('attachmentCache', error));
+    } catch (error) { warn('attachmentCache', error); }
+    return tokens;
+}
+
 function observeTerminalPid(terminal) {
     let record = terminalPids.get(terminal);
     if (record) return record;
@@ -265,6 +302,13 @@ function terminalSessionFromPid(terminal, pid, clientSessionsByPid, liveSessionN
     const identity = terminalSessionIdentities.get(terminal);
     if (identity) return liveByIdentity.get(identity)?.session;
 
+    // Launch metadata is only a shortcut while VS Code has not supplied a PID.
+    // Once it does, the live client/process relationship takes precedence.
+    if (pid === undefined) {
+        const saved = attachmentIdentity(terminal);
+        if (saved && liveByIdentity.has(saved)) return liveByIdentity.get(saved).session;
+    }
+
     const tracked = terminalSessions.get(terminal);
     if (tracked && liveSessionNames.has(tracked)) {
         return tracked;
@@ -282,7 +326,10 @@ async function refreshTerminalMappings() {
     const liveSessionNames = new Set(liveBySession.keys());
     const liveByIdentity = new Map(sessions.filter(item => item.identity).map(item => [item.identity, item]));
     const snapshotPids = new Map(terminals.map(terminal => [terminal, terminalPids.get(terminal).pid]));
-    const clientSessionsByPid = await getTmuxClientSessionsByPid();
+    // Without any ready PIDs there is nothing to join against the process
+    // table. Validate saved identities now; resolution triggers a fresh pass.
+    const clientSessionsByPid = [...snapshotPids.values()].some(pid => pid !== undefined)
+        ? await getTmuxClientSessionsByPid() : new Map();
     if (!clientSessionsByPid) return { complete: false, terminals };
     const currentTerminals = new Set(vscode.window.terminals);
 
@@ -455,6 +502,7 @@ async function attachSessions({ quiet = false, force = false } = {}) {
     if (vscode.window.terminals.some(terminal => !terminals.includes(terminal))) return;
     let attached = 0;
 
+    const candidates = [];
     for (const item of sessions) {
         if (sessionRepresented(item.session)) continue;
         // Launchers set their title before metadata/task sync and tmux attach.
@@ -464,7 +512,11 @@ async function attachSessions({ quiet = false, force = false } = {}) {
         if (!force && vscode.window.terminals.some(terminal => !terminalSessions.has(terminal)
             && isPersistableTitle(terminal.name) && labels.has(normalizeName(terminal.name)))) continue;
         if (item.created > 0 && Date.now() - item.created * 1000 < NEW_SESSION_GRACE_MS) continue;
-
+        candidates.push(item);
+    }
+    const tokens = rememberAttachments(candidates);
+    for (const item of candidates) {
+        const token = tokens.get(item.session);
         const name = item.title || nameFromSession(item.session);
         const terminal = vscode.window.createTerminal({
             name,
@@ -473,7 +525,7 @@ async function attachSessions({ quiet = false, force = false } = {}) {
             // This is a tmux client, not a new project shell. Freeze its launcher
             // environment so Python/other extensions cannot request reinjection.
             strictEnv: true,
-            env: { ...process.env, AGENT_GLUE_WORKSPACE: SCRIPT_ROOT, AGENT_GLUE_TASKS_FILE: taskOutput },
+            env: { ...process.env, AGENT_GLUE_WORKSPACE: SCRIPT_ROOT, AGENT_GLUE_TASKS_FILE: taskOutput, [ATTACHMENT_ENV]: token || null },
             cwd: SCRIPT_ROOT,
         });
 
@@ -512,6 +564,10 @@ function activate(context) {
         vscode.window.showWarningMessage('Disable the original Tmux Claude/Codex Attach extension before enabling Agent Glue Sessions.');
         return;
     }
+    attachmentState = context.globalState;
+    const savedAttachments = attachmentState.get?.(ATTACHMENTS_KEY);
+    attachments = new Map((Array.isArray(savedAttachments) ? savedAttachments.slice(-MAX_ATTACHMENTS) : [])
+        .filter(row => Array.isArray(row) && row.length === 2 && validToken(row[0]) && validIdentity(row[1])));
     taskOutput = path.join(context.globalStorageUri.fsPath, 'tasks-' + require('crypto').createHash('sha256').update(SCRIPT_ROOT).digest('hex').slice(0,16) + '.json');
     context.subscriptions.push(vscode.tasks.registerTaskProvider('agentGlue.session', {
         async provideTasks() {
@@ -538,6 +594,10 @@ function activate(context) {
         }),
         vscode.window.onDidCloseTerminal((terminal) => {
             forgetTerminal(terminal);
+        }),
+        vscode.window.onDidOpenTerminal((terminal) => {
+            observeTerminalPid(terminal);
+            void schedule('attachPoll', () => attachSessions({ quiet: true }));
         })
     );
 

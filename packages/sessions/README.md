@@ -26,6 +26,13 @@ MIT licensed, free to reuse and modify.
   connections. New attachments wait while an unidentified terminal is starting,
   so a slow launcher does not create a duplicate. Unchanged terminal names do not
   trigger extra process scans.
+- Newly attached tabs carry a private lookup token in their launch options, with
+  a small mapping in VS Code extension storage. When those options survive a
+  reload, Sessions can match the tab to the same live tmux session before its
+  process ID arrives. Missing or stale tokens fall back to asynchronous process
+  discovery; terminal names alone never establish identity. New terminal events
+  trigger discovery immediately, with periodic retries as a fallback. Existing
+  tabs without tokens continue to work through process discovery.
 - Generated tasks live in extension storage and appear through a task provider;
   workspace `tasks.json` is never touched.
 - Exposes a small API to **Agent Glue Companion** (find, focus and paste into a

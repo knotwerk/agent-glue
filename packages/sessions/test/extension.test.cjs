@@ -8,8 +8,8 @@ function host(options={}){
  const commands=new Map(),listeners={},calls=[],messages=[],execOptions=[],terminals=options.terminals||[];
  let session='claude-fixture-20261014_120000',title='Fixture agent';
  const dispose=()=>({dispose(){}});
- const context={subscriptions:[],globalStorageUri:{fsPath:'/fake/storage'},globalState:{update:async()=>{}}};
- const vscode={workspace:{isTrusted:true,workspaceFolders:[{uri:{fsPath:'/fixture/workspace'}}]},extensions:{all:[]},commands:{registerCommand:(name,fn)=>{commands.set(name,fn);return dispose();}},tasks:{registerTaskProvider:(name,provider)=>{listeners.tasks=provider;return dispose();}},TaskScope:{Workspace:1},Task:class{constructor(...args){this.args=args;}},ProcessExecution:class{constructor(...args){this.args=args;}},window:{terminals,showInformationMessage(message){messages.push(message);},showWarningMessage(){},onDidChangeTerminalState:fn=>{listeners.change=fn;return dispose();},onDidCloseTerminal:fn=>{listeners.close=fn;return dispose();},createTerminal:options=>{const terminal={...options,processId:Promise.resolve(42),dispose(){throw new Error('Unexpected terminal destruction');}};terminals.push(terminal);return terminal;}}};
+ const context={subscriptions:[],globalStorageUri:{fsPath:'/fake/storage'},globalState:options.globalState||{get:()=>undefined,update:async()=>{}}};
+ const vscode={workspace:{isTrusted:true,workspaceFolders:[{uri:{fsPath:'/fixture/workspace'}}]},extensions:{all:[]},commands:{registerCommand:(name,fn)=>{commands.set(name,fn);return dispose();}},tasks:{registerTaskProvider:(name,provider)=>{listeners.tasks=provider;return dispose();}},TaskScope:{Workspace:1},Task:class{constructor(...args){this.args=args;}},ProcessExecution:class{constructor(...args){this.args=args;}},window:{terminals,showInformationMessage(message){messages.push(message);},showWarningMessage(){},onDidChangeTerminalState:fn=>{listeners.change=fn;return dispose();},onDidCloseTerminal:fn=>{listeners.close=fn;return dispose();},onDidOpenTerminal:fn=>{listeners.open=fn;return dispose();},createTerminal:options=>{const terminal={...options,processId:Promise.resolve(42),dispose(){throw new Error('Unexpected terminal destruction');}};terminals.push(terminal);return terminal;}}};
  const child={
   exec(command,settings,callback){if(typeof settings==='function'){callback=settings;settings=undefined;}calls.push(command);execOptions.push(settings);if(options.exec)return options.exec(command,settings,callback);let stdout='';if(command.includes('list-sessions'))stdout=options.sessions?.()||[session,title,'','1700000000'].join('\x1f')+'\n';if(command.includes('list-clients'))stdout=options.clients?.()||'';if(command.startsWith('ps '))stdout=options.processes?.()||'';callback(null,stdout,'');},
   execFile(file,args,options,callback){if(typeof options==='function')callback=options;calls.push({file,args,options});let stdout='';if(file==='tmux'&&args[0]==='display-message')stdout='/fixture/actual-agent-project\n';if(file.endsWith('agent-tmux-rename.zsh')){session='claude-renamed-20261014_120000';title=args[1];stdout=session+'\n';}callback(null,stdout,'');}
@@ -166,12 +166,12 @@ test('failed session/client/process discovery preserves existing mappings and de
 test('a PID resolving during an older client snapshot cannot trigger a duplicate attachment',async()=>{
  let resolvePid,connected=false,snapshotTaken=false;
  const terminal={name:'tmux',processId:new Promise(resolve=>{resolvePid=resolve;})};
- const h=host({terminals:[terminal],exec:(command,settings,callback)=>{
+ const h=host({terminals:[terminal,{name:'zsh',processId:Promise.resolve(99)}],exec:(command,settings,callback)=>{
   let stdout='';if(command.includes('list-sessions'))stdout='codex-late\x1fLate\x1f\x1f1700000000\x1f$1\x1f500\n';
   if(command.includes('list-clients')){stdout=connected?'71\x1fcodex-late\n':'';if(!snapshotTaken){snapshotTaken=true;connected=true;resolvePid(71);}}
   callback(null,stdout,'');
  }});
- await h.api.refresh();await h.api.refresh();assert.equal(h.terminals.length,1);assert.equal(h.api.terminalForSession('codex-late'),terminal);
+ await h.api.refresh();await h.api.refresh();assert.equal(h.terminals.length,2);assert.equal(h.api.terminalForSession('codex-late'),terminal);
 });
 
 test('a terminal closing during discovery is not restored to the mapping',async()=>{
@@ -182,4 +182,64 @@ test('a terminal closing during discovery is not restored to the mapping',async(
   callback(null,stdout,'');
  }});
  await h.api.refresh();assert.equal(h.api.sessionForTerminal(terminal),undefined);
+});
+
+const attachmentKey='agentTmuxRestore.attachments.v1';
+const attachmentEnv='AGENT_GLUE_ATTACHMENT_TOKEN';
+const attachmentToken='11111111-2222-4333-8444-555555555555';
+const oneSession=()=> 'claude-one\x1fOne\x1f\x1f1700000000\x1f$1\x1f500\n';
+function savedState(entries=[[attachmentToken,'500:$1:1700000000']]){
+ const values=new Map([[attachmentKey,entries]]);
+ return {get:key=>values.get(key),update:async(key,value)=>{values.set(key,value);}};
+}
+function pendingAttachment(token=attachmentToken){return {name:'One',processId:new Promise(()=>{}),creationOptions:{shellPath:'/old-extension/helpers/agent-tmux-attach.zsh',env:{[attachmentEnv]:token}}};}
+
+test('a saved attachment identifies a restored terminal before its PID without process scans',async()=>{
+ const terminal=pendingAttachment(),h=host({terminals:[terminal],globalState:savedState(),sessions:oneSession});
+ await completes(h.api.refresh());
+ assert.equal(h.api.terminalForSession('claude-one'),terminal);assert.equal(h.terminals.length,1);
+ assert.ok(h.calls.every(call=>typeof call==='string'&&call.includes('list-sessions')));
+});
+
+test('new attachments save a token that remains usable in a new extension host after a session rename',async()=>{
+ const state=savedState([]),first=host({globalState:state,sessions:oneSession});await first.api.refresh();
+ const created=first.terminals[0],token=created.env[attachmentEnv];assert.match(token,/^[a-f0-9-]{36}$/);
+ assert.equal(state.get(attachmentKey).length,1);
+ const restored={name:'One',creationOptions:JSON.parse(JSON.stringify(created)),processId:new Promise(()=>{})};
+ const second=host({terminals:[restored],globalState:state,sessions:()=>oneSession().replace('claude-one','claude-renamed')});
+ await completes(second.api.refresh());assert.equal(second.api.terminalForSession('claude-renamed'),restored);assert.equal(second.terminals.length,1);
+});
+
+test('stale, unknown or malformed attachment records never identify a similarly named session',async()=>{
+ for(const entries of [[[attachmentToken,'501:$1:1700000000']],[[attachmentToken,'500:$1:1700000001']],[[attachmentToken,'500:$2:1700000000']],[],{},[null,[attachmentToken,{}]]]){
+  const terminal=pendingAttachment(),h=host({terminals:[terminal],globalState:savedState(entries),sessions:oneSession});
+  await completes(h.api.refresh());assert.equal(h.api.sessionForTerminal(terminal),undefined);assert.equal(h.terminals.length,1);
+ }
+});
+
+test('ordinary shells cannot inherit attachment identity, and lost launch metadata falls back when PID arrives',async()=>{
+ for(const creationOptions of [{shellPath:'/bin/zsh',env:{[attachmentEnv]:attachmentToken}},{}]){
+  let resolvePid,ready=false;const terminal={name:'One',creationOptions,processId:new Promise(resolve=>{resolvePid=resolve;})};
+  const h=host({terminals:[terminal],globalState:savedState(),sessions:oneSession,clients:()=>ready?'71\x1fclaude-one\n':''});
+  await completes(h.api.refresh());assert.equal(h.api.sessionForTerminal(terminal),undefined);
+  ready=true;resolvePid(71);await new Promise(resolve=>setImmediate(resolve));await h.api.refresh();assert.equal(h.api.sessionForTerminal(terminal),'claude-one');assert.equal(h.terminals.length,1);
+ }
+});
+
+test('live PID evidence overrides a saved attachment pointing at a different live session',async()=>{
+ const terminal=pendingAttachment();terminal.processId=Promise.resolve(71);
+ const h=host({terminals:[terminal],globalState:savedState(),sessions:()=>oneSession()+'codex-two\x1fTwo\x1f\x1f1700000000\x1f$2\x1f500\n',clients:()=> '71\x1fcodex-two\n'});
+ await h.api.refresh();assert.equal(h.api.sessionForTerminal(terminal),'codex-two');
+});
+
+test('new terminal events identify ready terminals without waiting for a timer',async()=>{
+ let ready=false;const h=host({sessions:()=>ready?oneSession():'claude-wait\x1fWait\x1f\x1f9999999999\x1f$9\x1f500\n',clients:()=>ready?'71\x1fclaude-one\n':''});await h.api.refresh();
+ const terminal={name:'One',processId:Promise.resolve(71)};ready=true;h.terminals.push(terminal);h.listeners.open(terminal);
+ await new Promise(resolve=>setImmediate(resolve));assert.equal(h.api.sessionForTerminal(terminal),'claude-one');assert.equal(h.terminals.length,1);
+});
+
+test('slow attachment storage does not block startup, and several tokens use one write',async()=>{
+ let writes=0;
+ const h=host({sessions:()=>oneSession()+'codex-two\x1fTwo\x1f\x1f1700000000\x1f$2\x1f500\n',globalState:{get:()=>[],update:()=>{writes++;return new Promise(()=>{});}}});
+ await completes(h.api.refresh());assert.equal(h.terminals.length,2);assert.equal(writes,1);
 });
