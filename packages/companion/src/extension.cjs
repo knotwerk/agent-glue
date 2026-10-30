@@ -14,7 +14,6 @@ const {renderSidebar,renderDraft}=require('./views.cjs');
 const {openPreview}=require('./preview.cjs');
 function activate(context){
   if(!vscode.workspace.isTrusted)return;
-  if(vscode.window.createTreeView)require('./terminal-selector.cjs').registerSelector(vscode,context);
   const views=new Set(),panels=new Map(),uploads=new core.Uploads();
   const browserLinks=new BrowserLinks({mermaidPath:path.join(context.extensionPath,'dist/mermaid.js')});
   context.subscriptions.push(browserLinks);
@@ -31,6 +30,7 @@ function activate(context){
   let dictationRequest,followTarget=false,clipboardBusy=false,manualSelection;
   const uploadBatches=new Map();
   const uploadBusy=()=>clipboardBusy||uploadBatches.size||uploads.pending.size||uploads.active.size;
+  const terminalSelector=vscode.window.createTreeView?require('./terminal-selector.cjs').registerSelector(vscode,context,terminal=>api?.sessionForTerminal(terminal)):undefined;
   let resourceTab='files',prFilter=context.workspaceState.get('prFilter','all'),resourceItems=[],resourceStatus='',resourceKey='',resourceRoot,resourceGeneration=0,resourceLoadedAt=0;
   let prSort=context.workspaceState.get('prSort','title'),prReadFilter=context.workspaceState.get('prReadFilter','all');
   const prRead=context.workspaceState.get('prRead',{});
@@ -230,7 +230,7 @@ function activate(context){
   const save=async()=>{await context.workspaceState.update('files',files);await context.workspaceState.update('draft',draft);await context.workspaceState.update('selected',selected);};
   const state=()=>({statusRunBusy,statusRunSessionId,webApps:apps.items.filter(item=>item.sessionId===selected&&!hiddenEndpoint(item)).map(item=>({...item,label:appLabel(item.url),healthLabel:appStatus(item),details:appDetails(item)})),webAppsActiveTotal:apps.items.filter(item=>!hiddenEndpoint(item)).length,sessions:sessionList,selectedSessionId:selected,filesMessage:byId(selected)?`No existing files found in the recent terminal output for ${byId(selected).name}.`:'No matching agent session for the selected terminal. Select an attached agent terminal or use Choose Session in the view menu.',resourceTab,prFilter,prSort,prReadFilter,resourceItems:visibleResources(),resourceStatus,resourceGeneration,resourceFolder:resourceRoot||byId(selected)?.cwd||'',files:(files[selected]||[]).filter(f=>!f.hidden&&!f.missing),draft,status:status||connectionStatus});
   const post=(view,message)=>{try{void Promise.resolve(view.postMessage(message)).catch(()=>views.delete(view));}catch{views.delete(view);}};
-  const publish=()=>{terminalActivity?.update(sessionList,{...statusReports,...activityReports},selected,Boolean(sidebar?.visible),api);if(sidebar)sidebar.title=byId(selected)?'AG - '+byId(selected).profile:'AG';for(const view of views)post(view,{type:'state',state:state()});};
+  const publish=()=>{terminalSelector?.refresh();terminalActivity?.update(sessionList,{...statusReports,...activityReports},selected,Boolean(sidebar?.visible),api);if(sidebar)sidebar.title=byId(selected)?'AG - '+byId(selected).profile:'AG';for(const view of views)post(view,{type:'state',state:state()});};
   function loadResources(force=false){
     const cwd=byId(selected)?.cwd;
     const key=resourceTab+':'+prFilter+':'+(cwd||'')+(resourceTab==='tasks'?':'+selected:'');
@@ -256,7 +256,7 @@ function activate(context){
   async function sessionsApi(){
     if(api)return api;
     const extension=vscode.extensions.getExtension('knotwerk.agent-glue-sessions');
-    if(extension)try{api=await extension.activate();}catch{api=undefined;}
+    if(extension)try{api=await extension.activate();terminalSelector?.refresh();}catch{api=undefined;}
     return api;
   }
   function refresh(){

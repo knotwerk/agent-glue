@@ -1,5 +1,5 @@
 {
-  "version": "0.1.67",
+  "version": "0.1.68",
   "activationEvents": [
     "onStartupFinished"
   ],
@@ -99,6 +99,11 @@
       {
         "command": "agentGlue.resetTerminalSelector",
         "title": "Agent Glue: Move Terminal Selector Back"
+      },
+      {
+        "command": "agentGlue.splitSelectorTerminal",
+        "title": "Split Terminal",
+        "icon": "$(split-horizontal)"
       }
     ],
     "viewsContainers": {
@@ -112,7 +117,7 @@
       "panel": [
         {
           "id": "agentGlueSelector",
-          "title": "Terminal Selector",
+          "title": "Terminals",
           "icon": "media/icon.svg"
         }
       ]
@@ -128,7 +133,7 @@
       "agentGlueSelector": [
         {
           "id": "agentGlue.terminalSelector",
-          "name": "Terminal Selector",
+          "name": "Terminals",
           "visibility": "hidden"
         }
       ]
@@ -200,6 +205,24 @@
           "command": "agentGlue.fork",
           "when": "isWorkspaceTrusted",
           "group": "1_create@0"
+        }
+      ],
+      "view/item/context": [
+        {
+          "command": "agentGlue.splitSelectorTerminal",
+          "when": "view == agentGlue.terminalSelector",
+          "group": "inline@2"
+        },
+        {
+          "command": "agentGlue.fork",
+          "when": "view == agentGlue.terminalSelector && viewItem == agentGlueAgentTerminal",
+          "group": "inline@1"
+        }
+      ],
+      "commandPalette": [
+        {
+          "command": "agentGlue.splitSelectorTerminal",
+          "when": "false"
         }
       ]
     },

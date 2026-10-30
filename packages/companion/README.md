@@ -234,7 +234,15 @@ remains available. The selector follows open/close/selection events without
 polling or reading terminal output.
 
 This is a layout prototype: activity statuses, timers and helper counts are not
-connected. The selected indicator means selection only. Placement uses VS Code's
+connected. The view is titled **Terminals** and uses neutral terminal icons; the selection highlight identifies the active terminal. Placement uses VS Code's
 workbench `vscode.moveViews` command and needs desktop acceptance testing. Use
 **Agent Glue: Move Terminal Selector Back** to return it to its separate panel;
 the selector view can also be hidden through its view menu.
+
+The **Terminals** list supports hover actions for Fork Conversation (on mapped agent sessions) and Split (a new shell beside the
+chosen terminal). It deliberately has no Close action. Drag rows to reorder;
+the order is saved per workspace using tmux session names where known. Ordinary
+shells use their name, starting folder and location; indistinguishable shells
+can only be matched by occurrence after a reload. Duplicate names are labelled
+Tab 1/Tab 2, and editor terminals are identified where VS Code exposes their
+location. The selector includes editor terminals as well as panel terminals.
