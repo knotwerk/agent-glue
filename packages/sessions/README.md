@@ -21,6 +21,11 @@ MIT licensed, free to reuse and modify.
 - Command: **Agent Glue: Attach Agent Tmux Sessions** (`tmuxClaude.attachAll`).
 - Runs on the workspace host (Remote SSH installs it on the remote machine) and
   needs `tmux`, `zsh` and `jq` there.
+- Startup identifies ready terminals without waiting for every terminal's process
+  ID. Discovery commands have time limits, and failed reads preserve known
+  connections. New attachments wait while an unidentified terminal is starting,
+  so a slow launcher does not create a duplicate. Unchanged terminal names do not
+  trigger extra process scans.
 - Generated tasks live in extension storage and appear through a task provider;
   workspace `tasks.json` is never touched.
 - Exposes a small API to **Agent Glue Companion** (find, focus and paste into a

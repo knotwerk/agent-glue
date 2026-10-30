@@ -15,6 +15,7 @@ const AGENT_PROGRAM_PATTERN = AGENT_PROGRAMS
     .join('|');
 const ATTACH_POLL_INTERVAL_MS = 5000;
 const RENAME_POLL_INTERVAL_MS = 1000;
+const DISCOVERY_OPTIONS = { timeout: 1500, maxBuffer: 4 * 1024 * 1024 };
 // A launcher creates the server session before its existing VS Code terminal
 // registers as a tmux client. Give that client two attach polls to appear.
 const NEW_SESSION_GRACE_MS = 10000;
@@ -39,11 +40,13 @@ const RENAME_SCRIPT = path.join(__dirname, 'helpers', 'agent-tmux-rename.zsh');
 const terminalSessions = new Map();
 const terminalSessionIdentities = new Map();
 const terminalNames = new Map();
+const terminalPids = new WeakMap();
 let sessionTerminals = new Map();
 let taskOutput;
 const lastKnownNames = new Map();
 
 let operationQueue = Promise.resolve();
+const pendingPolls = new Map();
 
 function resolveScriptRoot() {
     return vscode.workspace.workspaceFolders?.[0]?.uri.fsPath || require('os').homedir();
@@ -58,10 +61,19 @@ function realpath(candidate) {
 }
 
 function schedule(label, task) {
+    // Timer ticks are replaceable observations, not user actions. A slow pass
+    // must not leave seconds of obsolete polls queued behind it.
+    const poll = label === 'renamePoll' || label === 'attachPoll';
+    if (poll && pendingPolls.has(label)) return pendingPolls.get(label);
     operationQueue = operationQueue
         .catch(() => {})
         .then(task)
         .catch(error => warn(label, error));
+    if (poll) {
+        const current = operationQueue;
+        pendingPolls.set(label, current);
+        void current.then(() => { if (pendingPolls.get(label) === current) pendingPolls.delete(label); });
+    }
     return operationQueue;
 }
 
@@ -76,7 +88,7 @@ function shellQuote(value) {
 async function getAgentSessions() {
     try {
         const format = `#{session_name}${TMUX_FIELD_SEP}#{@title}${TMUX_FIELD_SEP}#{@agent_user_named}${TMUX_FIELD_SEP}#{session_created}${TMUX_FIELD_SEP}#{session_id}${TMUX_FIELD_SEP}#{pid}`;
-        const { stdout } = await execAsync(`tmux list-sessions -F ${shellQuote(format)} 2>/dev/null`);
+        const { stdout } = await execAsync(`tmux list-sessions -F ${shellQuote(format)} 2>/dev/null`, DISCOVERY_OPTIONS);
         return stdout.trim().split('\n')
             .filter(Boolean)
             .map(line => {
@@ -94,7 +106,7 @@ async function getAgentSessions() {
             .filter(item => isAgentSession(item.session))
             .sort((a, b) => a.created - b.created || a.session.localeCompare(b.session));
     } catch {
-        return [];
+        return undefined; // An incomplete read must not erase known sessions.
     }
 }
 
@@ -102,9 +114,10 @@ async function getTmuxClientSessionsByPid() {
     try {
         const format = `#{client_pid}${TMUX_FIELD_SEP}#{client_session}`;
         const [{ stdout }, processes] = await Promise.all([
-            execAsync(`tmux list-clients -F ${shellQuote(format)} 2>/dev/null`),
+            execAsync(`tmux list-clients -F ${shellQuote(format)} 2>/dev/null`, DISCOVERY_OPTIONS),
             getProcessTable(),
         ]);
+        if (!processes) return undefined;
         const result = new Map();
         for (const line of stdout.trim().split('\n').filter(Boolean)) {
             const [pid, session] = line.split(TMUX_FIELD_SEP);
@@ -118,13 +131,13 @@ async function getTmuxClientSessionsByPid() {
         }
         return result;
     } catch {
-        return new Map();
+        return undefined;
     }
 }
 
 async function getProcessTable() {
     try {
-        const { stdout } = await execAsync('ps -eo pid=,ppid=,comm=');
+        const { stdout } = await execAsync('ps -eo pid=,ppid=,comm=', DISCOVERY_OPTIONS);
         const processes = new Map();
         for (const line of stdout.split('\n')) {
             const match = line.trim().match(/^(\d+)\s+(\d+)\s+(.+)$/);
@@ -133,7 +146,7 @@ async function getProcessTable() {
         }
         return processes;
     } catch {
-        return new Map();
+        return undefined;
     }
 }
 
@@ -229,16 +242,25 @@ function authoritativeTitle(item) {
     return normalizeName(item?.userNamed || item?.title || nameFromSession(item?.session));
 }
 
-async function terminalSessionFromPid(terminal, clientSessionsByPid, liveSessionNames, liveByIdentity) {
-    try {
-        const pid = await terminal.processId;
-        const session = clientSessionsByPid.get(String(pid));
-        if (session && liveSessionNames.has(session)) {
-            return session;
+function observeTerminalPid(terminal) {
+    let record = terminalPids.get(terminal);
+    if (record) return record;
+    record = { pending: true, waited: false };
+    terminalPids.set(terminal, record);
+    // Subscribe once, without putting this terminal's promise on the shared
+    // operation queue. Resolution schedules a fresh client snapshot if needed.
+    Promise.resolve().then(() => terminal.processId).then(pid => {
+        record.pid = pid; record.pending = false;
+        if (record.waited && vscode.window.terminals.includes(terminal)) {
+            void schedule('attachPoll', () => attachSessions({ quiet: true }));
         }
-    } catch {
-        // Fall back to the previous mapping below.
-    }
+    }, () => { record.pending = false; record.failed = true; });
+    return record;
+}
+
+function terminalSessionFromPid(terminal, pid, clientSessionsByPid, liveSessionNames, liveByIdentity) {
+    const session = clientSessionsByPid.get(String(pid));
+    if (session && liveSessionNames.has(session)) return session;
 
     const identity = terminalSessionIdentities.get(terminal);
     if (identity) return liveByIdentity.get(identity)?.session;
@@ -253,24 +275,26 @@ async function terminalSessionFromPid(terminal, clientSessionsByPid, liveSession
 
 async function refreshTerminalMappings() {
     const terminals = [...vscode.window.terminals];
-    // VS Code may resolve a restored/starting terminal's PID only after tmux
-    // has connected. Take the client snapshot after that wait, not before it.
-    await Promise.allSettled(terminals.map(terminal => terminal.processId));
+    terminals.forEach(observeTerminalPid);
     const sessions = await getAgentSessions();
+    if (!sessions) return { complete: false, terminals };
     const liveBySession = new Map(sessions.map(item => [item.session, item]));
     const liveSessionNames = new Set(liveBySession.keys());
     const liveByIdentity = new Map(sessions.filter(item => item.identity).map(item => [item.identity, item]));
+    const snapshotPids = new Map(terminals.map(terminal => [terminal, terminalPids.get(terminal).pid]));
     const clientSessionsByPid = await getTmuxClientSessionsByPid();
+    if (!clientSessionsByPid) return { complete: false, terminals };
     const currentTerminals = new Set(vscode.window.terminals);
 
     const rebuiltTerminals = new Map();
 
     for (const terminal of terminals) {
+        if (!currentTerminals.has(terminal)) continue;
         if (!terminalNames.has(terminal)) {
             terminalNames.set(terminal, normalizeName(terminal.name));
         }
 
-        const session = await terminalSessionFromPid(terminal, clientSessionsByPid, liveSessionNames, liveByIdentity);
+        const session = terminalSessionFromPid(terminal, snapshotPids.get(terminal), clientSessionsByPid, liveSessionNames, liveByIdentity);
         if (!session) {
             terminalSessions.delete(terminal);
             continue;
@@ -310,7 +334,14 @@ async function refreshTerminalMappings() {
     }
 
     sessionTerminals = rebuiltTerminals;
-    return { sessions, liveBySession, liveSessionNames, terminals };
+    const unresolved = terminals.some(terminal => {
+        const record = terminalPids.get(terminal);
+        if (record.pending) record.waited = true;
+        return currentTerminals.has(terminal) && !terminalSessions.has(terminal)
+            && !terminal.creationOptions?.hideFromUser && !terminal.creationOptions?.pty
+            && (record.pending || record.failed || record.pid !== snapshotPids.get(terminal));
+    });
+    return { complete: true, unresolved, sessions, liveBySession, liveSessionNames, terminals };
 }
 
 function addSessionTerminal(session, terminal, target = sessionTerminals) {
@@ -363,9 +394,11 @@ function moveSessionMapping(oldSession, newSession, title) {
 }
 
 async function persistTerminalRename(sourceTerminal) {
-    const { liveBySession } = await refreshTerminalMappings();
     const terminal = sourceTerminal || vscode.window.activeTerminal;
     if (!terminal || !vscode.window.terminals.includes(terminal)) return;
+    if (terminalNames.get(terminal) === normalizeName(terminal.name)) return;
+    const { complete, liveBySession } = await refreshTerminalMappings();
+    if (!complete || !vscode.window.terminals.includes(terminal)) return;
 
     const current = normalizeName(terminal.name);
     const observed = terminalNames.get(terminal);
@@ -408,7 +441,15 @@ async function persistTerminalRename(sourceTerminal) {
 }
 
 async function attachSessions({ quiet = false, force = false } = {}) {
-    const { sessions, terminals } = await refreshTerminalMappings();
+    const { complete, unresolved, sessions, terminals } = await refreshTerminalMappings();
+    if (!complete) return;
+    // Known terminals remain mapped and usable. An unknown pending native tab
+    // could be a launcher for any unmatched session; never create a duplicate
+    // merely because its PID has not arrived (including an explicit refresh).
+    if (unresolved) {
+        if (!quiet) vscode.window.showInformationMessage('A terminal is still starting; existing sessions remain connected. Try Attach again when it is ready.');
+        return;
+    }
     // A terminal opened during discovery may be the launcher. Let the next
     // poll include it before deciding that another attachment is needed.
     if (vscode.window.terminals.some(terminal => !terminals.includes(terminal))) return;
