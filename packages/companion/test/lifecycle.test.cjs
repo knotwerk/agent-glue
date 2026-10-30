@@ -225,3 +225,33 @@ test('upgrading replays an old host checkpoint that dropped background metadata'
  old.version=1;old.events=old.events.map(({background,...event})=>event);old.state={status:'done'};await fs.writeFile(file,JSON.stringify(old));
  const upgraded=new Lifecycle(base);await upgraded.refresh([session]);assert.equal(upgraded.get(session.sessionName).status,'active');
 });
+
+test('child tool activity makes an older finished parent amber without storing child or tool content',()=>{
+ const child=eventRecord({hook_event_name:'PreToolUse',session_id:'chat',agent_id:'private-child',agent_type:'private-role',tool_input:{command:'private command'},transcript_path:'/private/history'},{server:'10',pane:'%2',created:'5'},4000);
+ assert.equal(child.event,'SubagentActivity');assert.doesNotMatch(JSON.stringify(child),/private|tool_input|agent_id/);
+ const events=[record('UserPromptSubmit',1000),record('Stop',2000),child];
+ const state=summarize(events,session,5000);assert.equal(state.status,'active');assert.match(state.label,/Child agent working/);assert.equal(state.since,undefined,'do not invent a new parent start time');
+ assert.equal(summarize(events,session,1000000).status,'unknown','activity without a task-count snapshot is not proof of indefinite work');
+ assert.equal(summarize([...events,record('Stop',6000)],session,7000).status,'done');
+ assert.equal(summarize([...events,{...record('Stop',6000),event:'SubagentStop',background:0}],session,7000).status,'done');
+ assert.equal(mergeHooks({},'observer',true).hooks.SubagentActivity,undefined,'synthetic events are never installed as CLI hook names');
+});
+
+test('child activity cannot clear a parent permission request or resurrect an ended session',()=>{
+ const child={...record('PreToolUse',4000),event:'SubagentActivity'};
+ assert.equal(summarize([record('PermissionRequest',2000),child],session,5000).status,'blocked');
+ assert.equal(summarize([record('SessionEnd',2000),child],session,5000).status,'unknown');
+ assert.equal(summarize([record('Interrupt',2000),child],session,5000).status,'idle');
+ assert.equal(summarize([child],session,5000).status,'active');
+ assert.equal(summarize([child],session,1000000).status,'unknown');
+ assert.equal(summarize([record('UserPromptSubmit',1000),child],session,5000).since,1000);
+});
+
+test('child activity flows through hook journals and replays after an old host ignored it',async()=>{
+ const {tempDir}=require('../../../test/support/tmp.cjs'),{observe,key}=require('../src/lifecycle-hook.cjs');const base=tempDir('child-activity-replay'),now=Date.now();
+ await writeEvent(base,record('Stop',now-1000));const first=new Lifecycle(base);await first.refresh([session]);
+ await observe({base,pid:5002,input:[JSON.stringify({hook_event_name:'PostToolUse',session_id:'chat',agent_id:'private-child',tool_response:'private response'})],now:()=>now,exec:async file=>({stdout:file==='ps'?'5002 5000\n5000 1\n':'5000\x1f10\x1f%2\x1f5\n'})});
+ const dir=path.join(base,key('10','%2')),file=path.join(dir,'state.json'),old=JSON.parse(await fs.readFile(file,'utf8'));old.version=2;old.cursor.offset=(await fs.stat(path.join(dir,'events.jsonl'))).size;await fs.writeFile(file,JSON.stringify(old));
+ const second=new Lifecycle(base);await second.refresh([session]);assert.equal(second.get(session.sessionName).status,'active');assert.match(second.get(session.sessionName).label,/Child agent working/);
+ assert.doesNotMatch(await fs.readFile(path.join(dir,'events.jsonl'),'utf8'),/private|tool_response/);
+});

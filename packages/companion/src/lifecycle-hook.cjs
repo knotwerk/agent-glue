@@ -1,7 +1,7 @@
 'use strict';
 // Standalone hook. Never retain prompts, messages, tool inputs or transcript paths.
 const fs=require('node:fs/promises'),path=require('node:path'),crypto=require('node:crypto');
-const EVENTS=['SessionStart','UserPromptSubmit','PreToolUse','PostToolUse','PermissionRequest','Notification','Stop','SubagentStop','Interrupt','SessionEnd'];
+const EVENTS=['SessionStart','UserPromptSubmit','PreToolUse','PostToolUse','PermissionRequest','Notification','Stop','SubagentStop','Interrupt','SessionEnd','SubagentActivity'];
 const root=()=>path.join(require('node:os').homedir(),'.local','state','agent-glue','lifecycle');
 const key=(server,pane)=>crypto.createHash('sha256').update(server+':'+pane).digest('hex');
 const threadKey=session=>crypto.createHash('sha256').update(session).digest('hex');
@@ -16,12 +16,16 @@ function storedEvent(value){
  const event=storedThreadEvent(value);if(event)return {...event,server:String(value.server),pane:value.pane,created:String(value.created)};
 }
 function inputEvent(input,now=Date.now()){
- if(!EVENTS.includes(input.hook_event_name)||(input.agent_id&&input.hook_event_name!=='SubagentStop')||typeof input.session_id!=='string'||input.session_id.length>200)return;
+ if(!EVENTS.includes(input.hook_event_name)||typeof input.session_id!=='string'||input.session_id.length>200)return;
+ // Child tools prove activity, but must not replace the parent's prompt,
+ // permission or completion event. Retain no child ID or tool content.
+ const childActivity=Boolean(input.agent_id)&&['PreToolUse','PostToolUse'].includes(input.hook_event_name);
+ if(input.agent_id&&!childActivity&&input.hook_event_name!=='SubagentStop')return;
  if(input.hook_event_name==='Notification'&&!['permission_prompt','elicitation_dialog'].includes(input.notification_type))return;
  // Claude's Stop/SubagentStop task list is scoped to the parent session.
  // Retain only its count, never task descriptions, commands or child messages.
  const background=['Stop','SubagentStop'].includes(input.hook_event_name)&&Array.isArray(input.background_tasks)&&input.background_tasks.length<=10000?input.background_tasks.length:undefined;
- return storedThreadEvent({event:input.hook_event_name,session:input.session_id,at:now,background});
+ return storedThreadEvent({event:childActivity?'SubagentActivity':input.hook_event_name,session:input.session_id,at:now,background});
 }
 function eventRecord(input,identity,now=Date.now()){
  const event=inputEvent(input,now);if(event)return storedEvent({...event,server:String(identity.server),pane:identity.pane,created:String(identity.created)});

@@ -3,7 +3,7 @@ const fs=require('node:fs/promises'),path=require('node:path');
 const {EVENTS,root,key,threadKey,storedEvent,storedThreadEvent,atomicJson}=require('./lifecycle-hook.cjs');
 const NO_EVENTS='No lifecycle events yet. Review Agent Glue hooks in /hooks. For Codex shared-server sessions, right-click → Link Codex Status using the Session ID from /status.';
 const REPLAY_BYTES=2*1024*1024;
-const CACHE_VERSION=2; // Replay old checkpoints that discarded background counts.
+const CACHE_VERSION=3; // Replay checkpoints from hosts that discarded child activity.
 async function readJson(file,maxBytes){
  try{const stat=await fs.lstat(file);if(!stat.isFile()||stat.isSymbolicLink()||stat.size>maxBytes)return;return JSON.parse(await fs.readFile(file,'utf8'));}catch{return;}
 }
@@ -43,20 +43,27 @@ function summarize(events,session,now=Date.now()){
  const current=valid.filter(e=>e.session===latest.session);
  // A child finishing does not finish the parent. Its parent-scoped snapshot
  // can complete a previously stopped parent only when no background work remains.
- const main=current.filter(e=>e.event!=='SubagentStop').at(-1);
- if(!main)return {status:'unknown',label:'Background update received; waiting for the main agent status',at:latest.at};
+ const main=current.filter(e=>!['SubagentStop','SubagentActivity'].includes(e.event)).at(-1);
+ const child=current.filter(e=>e.event==='SubagentActivity').at(-1);
+ const childWorking=latest.event==='SubagentActivity'&&(!main||['Stop','UserPromptSubmit','PreToolUse','PostToolUse'].includes(main.event));
+ if(!main){
+  if(childWorking&&now-child.at<=15*60*1000)return {status:'active',label:'Child agent working; parent status unavailable',at:child.at,event:child.event};
+  return {status:'unknown',label:'Background update received; waiting for the main agent status',at:latest.at};
+ }
  const background=main.event==='Stop'?(latest.event==='SubagentStop'?latest.background:main.background):undefined;
  let status=({SessionStart:'idle',UserPromptSubmit:'active',PreToolUse:'active',PostToolUse:'active',PermissionRequest:'blocked',Notification:'blocked',Stop:background>0?'active':'done',Interrupt:'idle',SessionEnd:'unknown'})[main.event];
+ if(childWorking)status='active';
  const stale=now-latest.at>15*60*1000;
  // A stopped foreground reply can leave explicit unfinished background work.
  // Silence during a long task is not an event that clears that work. Preserve
  // amber, but make the age of this report clear rather than claiming a heartbeat.
- if(stale&&['active','blocked'].includes(status)&&!(background>0))return {status:'unknown',label:'No recent update; last working/waiting event over 15 minutes ago',at:latest.at};
+ const statusAt=childWorking||latest.event==='SubagentStop'?latest.at:main.at;
+ if(now-statusAt>15*60*1000&&['active','blocked'].includes(status)&&!(background>0))return {status:'unknown',label:'No recent update; last working/waiting event over 15 minutes ago',at:statusAt};
  const prompt=current.find(e=>e.event==='UserPromptSubmit'&&e.at<=latest.at);
  const ended=current.filter(e=>(['Interrupt','SessionEnd'].includes(e.event)||(e.event==='Stop'&&!(e.background>0)))&&e.at<latest.at).at(-1);
  const since=prompt&&(!ended||prompt.at>ended.at)?prompt.at:undefined;
  const backgroundLabel=stale?'Background work last reported ('+background+'); no update for '+Math.floor((now-latest.at)/60000)+' min':'Background work continues ('+background+')';
- return {status,label:background>0?backgroundLabel:({active:'Working',blocked:'Waiting for you',done:'Turn finished',idle:'Idle',unknown:'Session ended'})[status],at:latest.at,since,event:latest.event};
+ return {status,label:childWorking&&!stale?'Child agent working':background>0?backgroundLabel:({active:'Working',blocked:'Waiting for you',done:'Turn finished',idle:'Idle',unknown:'Session ended'})[status],at:statusAt,since,event:latest.event};
 }
 class Lifecycle{
  constructor(base=root()){this.base=base;this.rows=new Map();this.checkpoints=new Map();this.threadCheckpoints=new Map();}
@@ -102,7 +109,7 @@ const profiles=['claude','claude2','claudel','claudelp','codex','codex2','codex3
 function mergeHooks(config,command,claude){
  if(!config||typeof config!=='object'||Array.isArray(config))throw Error('Expected a settings object');
  const next=structuredClone(config);next.hooks??={};if(typeof next.hooks!=='object'||Array.isArray(next.hooks))throw Error('Invalid hooks object');
- for(const event of EVENTS.filter(e=>claude?e!=='Interrupt':!['Notification','SubagentStop'].includes(e))){
+ for(const event of EVENTS.filter(e=>e!=='SubagentActivity'&&(claude?e!=='Interrupt':!['Notification','SubagentStop'].includes(e)))){
   const groups=next.hooks[event]||[];if(!Array.isArray(groups))throw Error('Invalid '+event+' hooks');
   if(groups.some(group=>group.hooks?.some(h=>h.command===command)))continue;
   next.hooks[event]=[...groups,{hooks:[{type:'command',command,timeout:2}]}];

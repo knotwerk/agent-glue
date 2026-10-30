@@ -212,6 +212,11 @@ Claude replies that report unfinished background tasks stay amber. Its parent-sc
 background count is also updated when a subagent finishes; that event cannot mark
 a still-working or permission-blocked parent finished. Counts are snapshots, not
 process polling. Older records lack this count and cannot be corrected retrospectively.
+Child-agent tool events are also retained as content-free activity signals. Recent
+child work can turn an older green completion amber without clearing the parent's
+permission request or treating a child's completion as the parent's completion.
+These signals preserve neither tool content nor child identifiers, and cannot
+recover activity discarded by earlier observer versions.
 A yellow ring marks an unread completion. Open the terminal and keep it selected
 for two seconds to mark that completion read; right-click **Mark Unread** to restore
 the ring. Read marks survive reloads, and the next completed turn gets a new ring.
