@@ -19,6 +19,8 @@ function probe(url){return new Promise(resolve=>{
  const deadline=setTimeout(()=>{finish({running:false,kind:'unreachable',reason:'Timed out'});request.destroy();},1500);
  request.on('error',error=>finish({running:false,kind:'unreachable',reason:error.code||'Connection failed'}));request.end();
 });}
+function urlPort(url){const u=new URL(url);return Number(u.port||(u.protocol==='https:'?443:80));}
+function hiddenEndpoint(item){return !item.running||item.kind==='service'||[401,403].includes(item.statusCode);}
 function health(value){return typeof value==='boolean'?{running:value,kind:value?'unknown':'unreachable'}:value;}
 function appStatus(item){return ({page:'Webpage',service:'API / service',error:'HTTP '+item.statusCode,redirect:'Redirect',unknown:'Responding · type unknown',unreachable:'Unreachable'})[item.kind]||(item.running?'Responding':'Unreachable');}
 function appDetails(item){return [appStatus(item),item.statusCode?'HTTP '+item.statusCode:'',item.contentType||'',item.source==='link'?'Link mentioned in terminal':'Discovered port · homepage guessed',item.frameRestricted?'Embedding restrictions reported; try Open in browser':'',item.reason||''].filter(Boolean).join(' · ');}
@@ -47,10 +49,16 @@ class WebApps{
    const [p,l,t]=await Promise.all([this.exec('ps',['-eo','pid=,ppid=,lstart=,comm=']),this.listening(),this.exec('tmux',['list-panes','-a','-F','#{pane_id}\x1f#{pane_pid}'])]);
    processes=processRows(p.stdout);ports=l;panes=new Map(t.stdout.trim().split('\n').map(x=>x.split('\x1f')));
   }catch{/* Links still work without process discovery tools. */}
+  // Match the listening process itself, never its ancestry: agents also launch real web servers.
+  const infrastructure=new Set(ports.filter(port=>{
+   const name=(processes.find(p=>p.pid===port.pid)?.name||port.name||'').split('/').at(-1);
+   return /^(?:codex|claude)(?:[0-9]+|l|lp)?$/.test(name);
+  }).map(port=>port.port));
   const candidates=[];
   for(const session of sessions){
    const urls=new Map(this.known.get(session.id)||[]);const pids=owners(processes,panes.get(session.pane));
    for(const port of ports){
+    if(infrastructure.has(port.port))continue;
     const process=processes.find(p=>p.pid===port.pid);if(!process)continue;
     const key=port.pid+':'+process.start;
     if(pids.has(port.pid))this.associations.set(key,session.id);
@@ -58,7 +66,7 @@ class WebApps{
     if([...urls.values()].some(url=>Number(new URL(url).port||(new URL(url).protocol==='https:'?443:80))===port.port))continue;
     const url=`http://localhost:${port.port}/`;urls.set(url,url);
    }
-   for(const url of [...urls.values()].slice(0,30))candidates.push({id:JSON.stringify([session.id,url]),sessionId:session.id,terminal:session.name,cwd:session.cwd,url,source:this.known.get(session.id)?.has(url)?'link':'process'});
+   for(const url of [...urls.values()].filter(url=>!infrastructure.has(urlPort(url))).slice(0,30))candidates.push({id:JSON.stringify([session.id,url]),sessionId:session.id,terminal:session.name,cwd:session.cwd,url,source:this.known.get(session.id)?.has(url)?'link':'process'});
   }
   const results=[];
   // Bound concurrent connections even when Show all spans many sessions.
@@ -70,9 +78,9 @@ class WebApps{
    }
    results.push({...item,...result});
   }));
-  for(const old of this.items)if(old.source==='process'&&sessions.some(s=>s.id===old.sessionId)&&!results.some(r=>r.id===old.id))results.push({...old,running:false,kind:'unreachable',statusCode:undefined,contentType:undefined,reason:'Listener no longer detected'});
+  for(const old of this.items)if(old.source==='process'&&!infrastructure.has(urlPort(old.url))&&sessions.some(s=>s.id===old.sessionId)&&!results.some(r=>r.id===old.id))results.push({...old,running:false,kind:'unreachable',statusCode:undefined,contentType:undefined,reason:'Listener no longer detected'});
   const liveKeys=new Set(processes.map(p=>p.pid+':'+p.start));for(const key of this.associations.keys())if(!liveKeys.has(key))this.associations.delete(key);
   this.items=results.sort((a,b)=>a.terminal.localeCompare(b.terminal)||a.url.localeCompare(b.url));return this.items;
  }
 }
-module.exports={appLabel,appStatus,appDetails,WebApps,localUrl,links,probe,owners,processRows,listeners,socketRows};
+module.exports={appLabel,appStatus,appDetails,hiddenEndpoint,WebApps,localUrl,links,probe,owners,processRows,listeners,socketRows};

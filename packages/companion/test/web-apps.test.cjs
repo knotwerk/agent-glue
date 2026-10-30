@@ -58,3 +58,20 @@ test('HTTP probes distinguish pages, services, errors and redirects without foll
   assert.ok(requests.every(r=>r.startsWith('HEAD ')));assert.equal(requests.length,6);
  }finally{await new Promise(resolve=>server.close(resolve));}
 });
+
+test('agent-owned listeners are excluded even when mentioned elsewhere; child web servers survive',async()=>{
+ const processes='10 1 Thu Oct 29 11:00:00 2026 zsh\n20 10 Thu Oct 29 11:00:00 2026 codex\n21 20 Thu Oct 29 11:00:00 2026 node\n30 1 Thu Oct 29 11:00:00 2026 claude';
+ const sockets='LISTEN 0 128 127.0.0.1:38105 0.0.0.0:* users:(("codex",pid=20,fd=3))\nLISTEN 0 128 127.0.0.1:3000 0.0.0.0:* users:(("node",pid=21,fd=3))\nLISTEN 0 128 127.0.0.1:4000 0.0.0.0:* users:(("claude",pid=30,fd=3))';
+ const checked=[];const apps=new WebApps(async cmd=>({stdout:cmd==='ps'?processes:cmd==='ss'?sockets:'%1\x1f10\n%2\x1f30'}),async url=>{checked.push(url);return {running:true,kind:'page'};});
+ const sessions=[{id:'a',name:'A',pane:'%1'},{id:'b',name:'B',pane:'%2'}];
+ apps.observe(sessions[1],'http://localhost:38105/ http://localhost:4000/');
+ apps.items=[{id:'old',source:'process',sessionId:'a',url:'http://localhost:38105/'}];
+ const result=await apps.refresh(sessions,true);
+ assert.deepEqual(result.map(r=>r.url),['http://localhost:3000/']);assert.deepEqual(checked,['http://localhost:3000/']);
+});
+test('protected and non-page endpoints are hidden by default without labelling them stopped',()=>{
+ const {hiddenEndpoint}=require('../src/web-apps.cjs');
+ for(const item of [{running:true,statusCode:401},{running:true,statusCode:403},{running:true,kind:'service'},{running:false}])assert.equal(hiddenEndpoint(item),true);
+ assert.equal(hiddenEndpoint({running:true,kind:'page'}),false);
+ assert.equal(hiddenEndpoint({running:true,kind:'error',statusCode:404}),false);
+});
