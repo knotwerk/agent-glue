@@ -1030,3 +1030,14 @@ test('retrying a missing upload folder preserves a manually chosen recipient',as
  choose='codex2';env.vscode.window.showInputBox=async()=>undefined;run=env.log.commands.get('agentGlue.fork')();await new Promise(r=>setImmediate(r));await accept();await run;assert.equal(forks.length,1);
  choose='claude';env.vscode.window.showInputBox=async()=>{throw Error('Same account must not request handoff details');};run=env.log.commands.get('agentGlue.fork')();await new Promise(r=>setImmediate(r));await accept();await run;assert.equal(forks.length,2);assert.equal(forks[1][2],undefined);
  });
+
+test('sidebar title follows the exact CLI profile and activity never captures background panes',async t=>{
+ const first={name:'First'},second={name:'Second'};
+ const env=await start(t,{capture:'• Working (2s • esc to interrupt)',sessions:cwd=>[session(cwd,{name:'First',profile:'claude2'}),session(cwd,{id:'$2',name:'Second',profile:'codexl',pane:'%2'})]});
+ env.vscode.window.activeTerminal=first;const view=await openSidebar(env);await settle(view);
+ assert.equal(view.title,'AG - claude2');assert.equal(lastState(view).activities[0].status,'active');
+ assert.equal(lastState(view).activities[1].status,'unknown');
+ assert.ok(env.calls.filter(([,args])=>args[0]==='capture-pane').every(([,args])=>args[args.indexOf('-t')+1]==='%1'));
+ env.vscode.window.activeTerminal=second;env.log.activeTerminalChanged(second);await settle(view);assert.equal(view.title,'AG - codexl');
+ env.vscode.window.activeTerminal={name:'Unrelated shell'};env.log.activeTerminalChanged(env.vscode.window.activeTerminal);await settle(view);assert.equal(view.title,'AG');
+});

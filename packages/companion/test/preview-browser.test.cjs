@@ -524,3 +524,27 @@ test('browser: prepared reviews allow local comments and a review-all request',{
  assert.equal(messages.at(-1).type,'reviewFeedback');
  assert.equal(await page.locator('#github').isVisible(),false);
 });
+
+test('browser: activity strip expands, focuses the chosen terminal and preserves focus during updates', {skip:!executablePath},async t=>{
+ const {chromium}=require('playwright');const browser=await chromium.launch({executablePath});t.after(()=>browser.close());const page=await browser.newPage({viewport:{width:320,height:700}});
+ await page.addInitScript(()=>{window.sent=[];window.acquireVsCodeApi=()=>({getState:()=>undefined,setState(){},postMessage:m=>window.sent.push(m)});});
+ const views=require('../src/views.cjs');
+ await page.route('**/*',route=>{
+  const url=route.request().url();if(url==='https://agent-glue.test/')return route.fulfill({contentType:'text/html',body:views.renderSidebar({nonce:'test',cspSource:'https://agent-glue.test',scriptUri:'https://agent-glue.test/companion.js',styleUri:'https://agent-glue.test/companion.css'})});
+  const name=url.split('/').pop();if(['companion.js','companion.css'].includes(name))return route.fulfill({contentType:name.endsWith('.js')?'text/javascript':'text/css',body:fs.readFileSync(path.join(__dirname,'../media',name),'utf8')});return route.abort();
+ });
+ await page.goto('https://agent-glue.test/');
+ await page.evaluate(()=>{
+  window.example={sessions:[],selectedSessionId:'one',activities:[{id:'one',name:'Example <b>agent</b>',profile:'claude2',status:'active',label:'Working',since:Date.now()-65000,reported:false,helpers:2},{id:'two',name:'Other',profile:'codexl',status:'done',label:'Done',updatedAt:Date.now(),reported:true}],draft:{}};
+  window.dispatchEvent(new MessageEvent('message',{data:{type:'state',state:window.example}}));
+ });
+ assert.equal(await page.locator('#activity-strip').getAttribute('open'),null);
+ assert.equal(await page.locator('#activity-summary b').count(),0);
+ assert.match(await page.locator('#activity-summary').textContent(),/1:05/);
+ await page.locator('#activity-summary').click();await page.getByRole('button',{name:'Other — Done',exact:true}).click();
+ assert.deepEqual(await page.evaluate(()=>window.sent.at(-1)),{type:'focusActivity',id:'two'});
+ await page.evaluate(()=>{window.example.activities[0].since-=1000;window.dispatchEvent(new MessageEvent('message',{data:{type:'state',state:window.example}}));});
+ assert.equal(await page.evaluate(()=>document.activeElement.dataset.id),'two');
+ assert.ok(await page.locator('#activity-strip').evaluate(el=>el.scrollWidth<=el.clientWidth+1));
+ assert.notEqual(await page.locator('.activity-dot.active').first().evaluate(el=>getComputedStyle(el).color),await page.locator('.activity-dot.done').evaluate(el=>getComputedStyle(el).color));
+});

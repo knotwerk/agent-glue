@@ -220,3 +220,23 @@ body[data-view="sidebar"] .note-input textarea { min-height:72px; max-height:non
 .task-state-label { max-width:85px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; flex-shrink:0; }
 
 .task-group-heading { padding:8px 6px 3px; font-size:11px; font-weight:600; color:var(--vscode-descriptionForeground); }
+
+.activity-strip { border-bottom:1px solid var(--vscode-panel-border); padding:3px 5px; }
+.activity-strip summary { display:flex; align-items:center; gap:4px; cursor:pointer; min-height:25px; }
+.activity-strip summary::before { content:'▸'; flex:none; }
+.activity-strip[open] summary::before { content:'▾'; }
+.activity-content { display:flex; align-items:center; gap:5px; min-width:0; flex:1; font-size:11px; }
+.activity-name { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; min-width:35px; flex:1; }
+.activity-dot { color:var(--vscode-descriptionForeground); }
+.activity-dot.active { color:var(--vscode-terminal-ansiYellow,#d7ba7d); }
+.activity-dot.done { color:var(--vscode-terminal-ansiGreen,#73c991); }
+.activity-dot.blocked { color:var(--vscode-terminal-ansiRed,#f14c4c); }
+.activity-age { color:var(--vscode-descriptionForeground); font-variant-numeric:tabular-nums; }
+.activity-state,.activity-age { flex:none; }
+.activity-terminal { width:100%; background:transparent; color:inherit; padding:5px 3px; text-align:left; }
+.activity-terminal:hover,.activity-terminal.selected { background:var(--vscode-list-hoverBackground); }
+.activity-help { color:var(--vscode-descriptionForeground); font-size:11px; margin:5px 0; }
+
+.activity-content { flex-wrap:wrap; }
+.activity-strip summary .activity-content { flex-wrap:nowrap; overflow:hidden; }
+.activity-strip summary .activity-age { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; flex:0 1 auto; }

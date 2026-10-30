@@ -32,6 +32,29 @@
   const CHUNK_BYTES = 192 * 1024;
   const pinSvg = '<svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.2" aria-hidden="true"><path d="m6 2 6 6-2 1-1 3-2-2-4 4 3-5-2-2 3-1z"/></svg>';
 
+  let lastActivityState;
+  function renderActivity(){
+    const strip=byId('activity-strip');if(!strip)return;
+    const items=state.activities||[],key=JSON.stringify([items,state.selectedSessionId,Math.floor(Date.now()/1000)]);
+    if(key===lastActivityState)return;lastActivityState=key;strip.hidden=!items.length;
+    const summary=byId('activity-summary'),list=byId('activity-list');
+    const badge=item=>{
+      const row=element('span','activity-content'),dot=element('span','activity-dot '+item.status,'●');dot.setAttribute('aria-hidden','true');
+      row.append(dot,element('span','activity-name',item.name),element('span','activity-state',item.label));
+      if(item.reported){row.append(element('span','activity-age',item.updatedAt?(item.observed?'seen ':'reported ')+relativeTime(new Date(item.updatedAt).toISOString()):'no report'));}
+      else if(item.status==='active'&&item.since){const seconds=Math.max(0,Math.floor((Date.now()-item.since)/1000));row.append(element('span','activity-age',Math.floor(seconds/60)+':'+String(seconds%60).padStart(2,'0')));}
+      if(item.helpers)row.append(element('span','activity-age',item.helpers+' helpers'));
+      row.title=(item.helpers?item.helpers+' reported helper descriptions, not a live agent count. ':'')+(item.reported?'Saved status, not live monitoring.':'Observed in the selected terminal. Timer starts when Agent Glue first observes work.')+' '+item.profile;
+      return row;
+    };
+    summary.replaceChildren();const current=items.find(i=>i.id===state.selectedSessionId);
+    if(current)summary.append(badge(current));else summary.append(element('span','','Terminal activity'));
+    summary.append(element('span','count',String(items.length)));
+    // Keep row buttons mounted while clocks tick so keyboard focus is preserved.
+    const existing=new Map([...list.children].map(node=>[node.dataset.id,node]));
+    for(const item of items){let button=existing.get(item.id);if(!button){button=element('button','activity-terminal');button.dataset.id=item.id;button.addEventListener('click',()=>send({type:'focusActivity',id:item.id}));list.append(button);}existing.delete(item.id);button.setAttribute('aria-label',item.name+' — '+item.label);button.classList.toggle('selected',item.id===state.selectedSessionId);button.replaceChildren(badge(item));}
+    for(const button of existing.values())button.remove();
+  }
   function relativeTime(value){
     const timestamp=Date.parse(value);
     if(!Number.isFinite(timestamp))return '';
@@ -629,6 +652,7 @@
       const fileState=JSON.stringify([Math.floor(Date.now()/60000),state.selectedSessionId,state.sessions,state.files,state.filesMessage,state.resourceTab,state.prFilter,state.resourceItems,state.resourceStatus,state.resourceFolder,state.resourceGeneration,state.statusRunBusy,state.statusRunSessionId]);
       if(fileState!==lastFileState){lastFileState=fileState;renderFiles();}
       const robot=byId('task-instructions');if(robot){robot.disabled=Boolean(state.statusRunBusy);robot.textContent=state.statusRunBusy?'🤖 Running…':'🤖 Run';}
+      renderActivity();
       renderWebApps();
       renderDraft();
       renderUploads();
