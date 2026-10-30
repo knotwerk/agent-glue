@@ -85,6 +85,7 @@ on macOS, dictation and clipboard images.
   replace the native tab list. Hook events show amber working, red permission/input
   requested, green turn finished, and grey idle/unknown. Rows keep just the dot and
   timing; hover for details. A yellow ring around green marks an unread completion.
+  Claude stays amber when its reply reports unfinished background work.
   Open the terminal for two seconds to clear it, or right-click **Mark Unread** to
   bring it back. Read marks survive reloads. Right-click also offers **Rename
   Terminal** and **New Terminal**, which opens zsh in that terminal's folder.

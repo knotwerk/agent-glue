@@ -208,6 +208,10 @@ when that start event is missing; tool events do not reset it. Other timestamps
 show time since the recorded update. Hidden VS Code tool terminals are
 excluded from the list.
 Green means the agent finished responding, not that all project work is complete.
+Claude replies that report unfinished background tasks stay amber. Its parent-scoped
+background count is also updated when a subagent finishes; that event cannot mark
+a still-working or permission-blocked parent finished. Counts are snapshots, not
+process polling. Older records lack this count and cannot be corrected retrospectively.
 A yellow ring marks an unread completion. Open the terminal and keep it selected
 for two seconds to mark that completion read; right-click **Mark Unread** to restore
 the ring. Read marks survive reloads, and the next completed turn gets a new ring.
@@ -238,7 +242,8 @@ conversation journal. After linking, Agent Glue recovers that conversation's
 latest status and any recorded turn start immediately. It does not guess the
 link from the folder, and conflicting links stay unknown.
 
-The observer only stores event names, timestamps, session IDs and tmux identity
+The observer only stores event names, timestamps, session IDs, tmux identity and
+the reported background-task count
 under Companion's global storage. It discards prompt text, tool payloads and
 transcript paths and does not read CLI history. Each pane has an append-only
 `events.jsonl` journal and a replaceable `state.json` cache. Hooks flush each event

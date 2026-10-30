@@ -3,6 +3,7 @@ const fs=require('node:fs/promises'),path=require('node:path');
 const {EVENTS,root,key,threadKey,storedEvent,storedThreadEvent,atomicJson}=require('./lifecycle-hook.cjs');
 const NO_EVENTS='No lifecycle events yet. Review Agent Glue hooks in /hooks. For Codex shared-server sessions, right-click → Link Codex Status using the Session ID from /status.';
 const REPLAY_BYTES=2*1024*1024;
+const CACHE_VERSION=2; // Replay old checkpoints that discarded background counts.
 async function readJson(file,maxBytes){
  try{const stat=await fs.lstat(file);if(!stat.isFile()||stat.isSymbolicLink()||stat.size>maxBytes)return;return JSON.parse(await fs.readFile(file,'utf8'));}catch{return;}
 }
@@ -18,7 +19,7 @@ async function readJournal(dir,previous,legacy,parse=storedEvent){
  catch(error){if(error.code==='ENOENT')return {events:mergeEvents(parse,previous?.events||[],legacy),cursor:null};throw error;}
  try{
   const stat=await handle.stat();if(!stat.isFile())throw Error('Unsafe observer journal');
-  const compatible=previous?.version===1&&Array.isArray(previous.events)&&previous.events.length<=EVENTS.length&&previous.events.every(parse)&&previous.cursor?.dev===stat.dev&&previous.cursor?.ino===stat.ino&&Number.isSafeInteger(previous.cursor.offset)&&previous.cursor.offset>=0&&previous.cursor.offset<=stat.size;
+  const compatible=previous?.version===CACHE_VERSION&&Array.isArray(previous.events)&&previous.events.length<=EVENTS.length&&previous.events.every(parse)&&previous.cursor?.dev===stat.dev&&previous.cursor?.ino===stat.ino&&Number.isSafeInteger(previous.cursor.offset)&&previous.cursor.offset>=0&&previous.cursor.offset<=stat.size;
   let offset=compatible?previous.cursor.offset:0,events=mergeEvents(parse,compatible?previous.events:legacy);
   const bytes=Buffer.alloc(Math.min(REPLAY_BYTES,stat.size-offset));
   const {bytesRead}=await handle.read(bytes,0,bytes.length,offset);
@@ -40,12 +41,17 @@ function summarize(events,session,now=Date.now()){
  const valid=events.filter(e=>EVENTS.includes(e.event)&&(!session.threadId||e.session===session.threadId)&&e.server===String(session.serverPid)&&e.pane===session.pane&&e.created===String(session.created)&&Number.isFinite(e.at)&&e.at<=now+1000).sort((a,b)=>a.at-b.at);
  const latest=valid.at(-1);if(!latest)return {status:'unknown',label:NO_EVENTS};
  const current=valid.filter(e=>e.session===latest.session);
- if(now-latest.at>15*60*1000&&!['Stop','SessionStart','Interrupt','SessionEnd'].includes(latest.event))return {status:'unknown',label:'No recent update; last working/waiting event over 15 minutes ago',at:latest.at};
- let status=({SessionStart:'idle',UserPromptSubmit:'active',PreToolUse:'active',PostToolUse:'active',PermissionRequest:'blocked',Notification:'blocked',Stop:'done',Interrupt:'idle',SessionEnd:'unknown'})[latest.event];
+ // A child finishing does not finish the parent. Its parent-scoped snapshot
+ // can complete a previously stopped parent only when no background work remains.
+ const main=current.filter(e=>e.event!=='SubagentStop').at(-1);
+ if(!main)return {status:'unknown',label:'Background update received; waiting for the main agent status',at:latest.at};
+ const background=main.event==='Stop'?(latest.event==='SubagentStop'?latest.background:main.background):undefined;
+ let status=({SessionStart:'idle',UserPromptSubmit:'active',PreToolUse:'active',PostToolUse:'active',PermissionRequest:'blocked',Notification:'blocked',Stop:background>0?'active':'done',Interrupt:'idle',SessionEnd:'unknown'})[main.event];
+ if(now-latest.at>15*60*1000&&['active','blocked'].includes(status))return {status:'unknown',label:'No recent update; last working/waiting event over 15 minutes ago',at:latest.at};
  const prompt=current.find(e=>e.event==='UserPromptSubmit'&&e.at<=latest.at);
- const ended=current.filter(e=>['Stop','Interrupt','SessionEnd'].includes(e.event)&&e.at<latest.at).at(-1);
+ const ended=current.filter(e=>(['Interrupt','SessionEnd'].includes(e.event)||(e.event==='Stop'&&!(e.background>0)))&&e.at<latest.at).at(-1);
  const since=prompt&&(!ended||prompt.at>ended.at)?prompt.at:undefined;
- return {status,label:({active:'Working',blocked:'Waiting for you',done:'Turn finished',idle:'Idle',unknown:'Session ended'})[status],at:latest.at,since,event:latest.event};
+ return {status,label:background>0?'Background work continues ('+background+')':({active:'Working',blocked:'Waiting for you',done:'Turn finished',idle:'Idle',unknown:'Session ended'})[status],at:latest.at,since,event:latest.event};
 }
 class Lifecycle{
  constructor(base=root()){this.base=base;this.rows=new Map();this.checkpoints=new Map();this.threadCheckpoints=new Map();}
@@ -66,14 +72,14 @@ class Lifecycle{
     try{
      const legacy=await Promise.all(EVENTS.map(event=>readJson(path.join(threadDir,event+'.json'),2048)));
      const pending=await readJournal(threadDir,this.threadCheckpoints.get(session.threadId),legacy.filter(Boolean),storedThreadEvent);
-     this.threadCheckpoints.set(session.threadId,{version:1,...pending});
+     this.threadCheckpoints.set(session.threadId,{version:CACHE_VERSION,...pending});
      recovered=pending.events.filter(event=>event.session===session.threadId).map(event=>({...event,server:String(session.serverPid),pane:session.pane,created:String(session.created)}));
      if(pending.catchingUp)replay.catchingUp=true;
     }catch{rows.set(session.sessionName,{status:'unknown',label:'Conversation status log could not be read; records have been preserved.'});return;}
    }
    const matching=replay.events.filter(event=>!session.threadId||event.session===session.threadId);
    const state=replay.catchingUp?{status:'unknown',label:'Recovering status from the event log…'}:summarize(mergeEvents(storedEvent,recovered,matching),session);
-   const snapshot={version:1,...replay,state};
+   const snapshot={version:CACHE_VERSION,...replay,state};
    rows.set(session.sessionName,state);
    if(replay.events.length&&JSON.stringify(previous)!==JSON.stringify(snapshot)){
     // The log is authoritative. Snapshot failure never discards events or stops
@@ -91,7 +97,7 @@ const profiles=['claude','claude2','claudel','claudelp','codex','codex2','codex3
 function mergeHooks(config,command,claude){
  if(!config||typeof config!=='object'||Array.isArray(config))throw Error('Expected a settings object');
  const next=structuredClone(config);next.hooks??={};if(typeof next.hooks!=='object'||Array.isArray(next.hooks))throw Error('Invalid hooks object');
- for(const event of EVENTS.filter(e=>claude?e!=='Interrupt':e!=='Notification')){
+ for(const event of EVENTS.filter(e=>claude?e!=='Interrupt':!['Notification','SubagentStop'].includes(e))){
   const groups=next.hooks[event]||[];if(!Array.isArray(groups))throw Error('Invalid '+event+' hooks');
   if(groups.some(group=>group.hooks?.some(h=>h.command===command)))continue;
   next.hooks[event]=[...groups,{hooks:[{type:'command',command,timeout:2}]}];

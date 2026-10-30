@@ -174,3 +174,41 @@ test('an exact conversation linked to two different panes cannot colour both as 
  const lifecycle=new Lifecycle(base);await lifecycle.refresh([{...session,threadId:'same-thread'},{...session,pane:'%3',sessionName:'other-terminal',threadId:'same-thread'}]);
  assert.equal(lifecycle.get(session.sessionName).status,'unknown');assert.equal(lifecycle.get('other-terminal').status,'unknown');assert.match(lifecycle.get('other-terminal').label,/multiple terminals/);
 });
+
+test('Claude Stop remains amber while its reported background work is running, and keeps the turn timer',()=>{
+ const identity={server:'10',pane:'%2',created:'5'};
+ const stop=eventRecord({hook_event_name:'Stop',session_id:'chat',background_tasks:[{id:'private-id',description:'private task',command:'secret shell command',status:'running'}],session_crons:[{prompt:'private prompt'}]},identity,2000);
+ assert.equal(stop.background,1);assert.doesNotMatch(JSON.stringify(stop),/private|secret|command|cron/);
+ const events=[record('UserPromptSubmit',1000),stop];
+ const state=summarize(events,session,3000);assert.equal(state.status,'active');assert.equal(state.since,1000);assert.match(state.label,/Background work/);
+ assert.equal(summarize(events,session,1000000).status,'unknown','an old background snapshot must not look live forever');
+ events.push(eventRecord({hook_event_name:'SubagentStop',session_id:'chat',agent_id:'child',background_tasks:[],last_assistant_message:'private'},identity,4000));
+ assert.equal(summarize(events,session,5000).status,'done');
+});
+
+test('a child finishing cannot turn an active or blocked parent green',()=>{
+ const snapshot=eventRecord({hook_event_name:'SubagentStop',session_id:'chat',agent_id:'child',background_tasks:[]},{server:'10',pane:'%2',created:'5'},3000);
+ assert.equal(summarize([record('UserPromptSubmit',1000),snapshot],session,4000).status,'active');
+ assert.equal(summarize([record('PermissionRequest',2000),snapshot],session,4000).status,'blocked');
+ assert.equal(summarize([snapshot],session,4000).status,'unknown');
+ assert.equal(eventRecord({hook_event_name:'SubagentStop',session_id:'chat',agent_id:'child'},session),undefined,'Codex child completions have no parent-scoped background snapshot');
+ assert.equal(mergeHooks({},'observer',false).hooks.SubagentStop,undefined);assert.ok(mergeHooks({},'observer',true).hooks.SubagentStop);
+});
+
+test('background counts survive pane and unlinked journals, cache recovery, and final completion',async()=>{
+ const {tempDir}=require('../../../test/support/tmp.cjs');const {writeUnlinkedEvent}=require('../src/lifecycle-hook.cjs');const base=tempDir('background-recovery'),now=Date.now();
+ const linked={...session,threadId:'chat'};await writeUnlinkedEvent(base,{event:'Stop',session:'chat',at:now-2000,background:2});
+ const lifecycle=new Lifecycle(base);await lifecycle.refresh([linked]);assert.equal(lifecycle.get(session.sessionName).status,'active');
+ await writeEvent(base,{...record('Stop',now-1000),background:1});await lifecycle.refresh([linked]);assert.equal(lifecycle.get(session.sessionName).status,'active');
+ const second=new Lifecycle(base);await second.refresh([linked]);assert.equal(second.get(session.sessionName).status,'active');
+ await writeEvent(base,{...record('Stop',now),background:0});await second.refresh([linked]);assert.equal(second.get(session.sessionName).status,'done');
+});
+
+test('upgrading replays an old host checkpoint that dropped background metadata',async()=>{
+ const {tempDir}=require('../../../test/support/tmp.cjs');const {key}=require('../src/lifecycle-hook.cjs');const base=tempDir('background-cache-upgrade'),now=Date.now();
+ await writeEvent(base,{...record('Stop',now),background:3});
+ const first=new Lifecycle(base);await first.refresh([session]);
+ const file=path.join(base,key('10','%2'),'state.json');const old=JSON.parse(await fs.readFile(file,'utf8'));
+ old.version=1;old.events=old.events.map(({background,...event})=>event);old.state={status:'done'};await fs.writeFile(file,JSON.stringify(old));
+ const upgraded=new Lifecycle(base);await upgraded.refresh([session]);assert.equal(upgraded.get(session.sessionName).status,'active');
+});
