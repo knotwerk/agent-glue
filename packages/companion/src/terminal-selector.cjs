@@ -1,4 +1,5 @@
 'use strict';
+const path=require('node:path');
 // Native terminal controls; lifecycle status is deliberately not inferred here.
 function registerSelector(vscode,context,sessionForTerminal=()=>undefined,statusForSession=()=>({status:'unknown',label:'No lifecycle events yet'})){
  if(!vscode.window.createTreeView)return;
@@ -24,6 +25,7 @@ function registerSelector(vscode,context,sessionForTerminal=()=>undefined,status
   return ordered;
  };
  const status=terminal=>sessionForTerminal(terminal)?statusForSession(sessionForTerminal(terminal)):undefined;
+ const statusIcon=state=>{const color=({active:'amber',blocked:'red',done:'green'})[state.status]||'grey';const media=path.join(context.extensionPath||path.resolve(__dirname,'..'),'media');return {light:vscode.Uri.file(path.join(media,'status-'+color+'-light.svg')),dark:vscode.Uri.file(path.join(media,'status-'+color+'-dark.svg'))};};
  const provider={onDidChangeTreeData:changed.event,getChildren:children,
   getTreeItem(terminal){
    if(!ids.has(terminal))ids.set(terminal,String(++nextId));
@@ -36,7 +38,7 @@ function registerSelector(vscode,context,sessionForTerminal=()=>undefined,status
    const elapsed=state?.status==='active'&&state.since?age(state.since):state?.at?age(state.at)+' ago':'';
    const description=[label,elapsed,editor?'Editor':'',same.length>1?'Tab '+(same.indexOf(terminal)+1):''].filter(Boolean).join(' · ');
    return {id:ids.get(terminal),label:terminal.name,description:description||undefined,contextValue:sessionForTerminal(terminal)?'agentGlueAgentTerminal':'agentGlueTerminal',
-    iconPath:state?new vscode.ThemeIcon('circle-filled',new vscode.ThemeColor(({active:'terminal.ansiYellow',blocked:'terminal.ansiRed',done:'terminal.ansiGreen'})[state.status]||'descriptionForeground')):new vscode.ThemeIcon('terminal'),
+    iconPath:state?statusIcon(state):new vscode.ThemeIcon('terminal'),
     tooltip:terminal.name+' — '+(selected?'selected terminal':'click to focus')+'\n'+(sessionForTerminal(terminal)||'Shell terminal')+'\n'+(state?state.label+(state.at?' · '+new Date(state.at).toLocaleTimeString():''):'Shell terminal'),
     command:{command:'agentGlue.focusSelectorTerminal',title:'Focus terminal',arguments:[terminal]}};
   },getParent:()=>undefined};

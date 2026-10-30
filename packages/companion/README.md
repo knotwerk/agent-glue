@@ -201,7 +201,7 @@ and 200 records per project. No conversation histories or agent memory are index
 ## Live terminal status
 
 The **Terminals** selector displays local lifecycle events from Claude and Codex:
-consistent RAG dots: amber for working, red for permission/input requested, green
+consistent RAG dots (their colours stay visible when selected): amber for working, red for permission/input requested, green
 for a finished turn, and grey for idle or unknown. Rows include plain-English status
 and elapsed/update age. Hidden VS Code tool terminals are
 excluded from the list.
