@@ -222,7 +222,7 @@ test('browser: resource icons, PR filters and local PR document links work witho
   await page.evaluate(()=>window.originalFileRow=document.querySelector('.file-item'));
   await setState({resourceTab:'files',files:[{id:'doc',path:'/docs/x.md',label:'x.md',pinned:true}],draft:{},webAppsActiveTotal:3,webApps:[{id:'app',label:'index.html',url:'http://localhost:3000/index.html',running:true}]});
   assert.equal(await page.locator('.web-app-list').isVisible(),false);
-  assert.match(await page.locator('.web-app-header').textContent(),/Web apps · 1 activeAll · 3/);
+  assert.match(await page.locator('.web-app-header').textContent(),/Web apps · 1 respondingAll · 3/);
   await page.getByRole('button',{name:'Expand or collapse web apps'}).click();
   assert.equal(await page.locator('.web-app-list').isVisible(),true);
   assert.equal(await page.locator('.web-app-name').textContent(),'● index.html');

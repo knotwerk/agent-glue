@@ -62,10 +62,10 @@ on macOS, dictation and clipboard images.
   saved task status, plus optional `/status` output you paste. This is a handoff,
   not a conversion of chat history. The original terminal stays untouched.
 - **Open running apps.** Files includes a collapsed **Web apps** line with active
-  counts for this terminal and all terminals. Expand it to see filenames or page
+  responding-endpoint counts for this terminal and all terminals. Expand it to see filenames or page
   paths beside links. Apps are discovered from terminal URLs and server processes. Click to open in VS Code's main editor; right-click for
   **Open in browser** or **Copy link** through SSH forwarding. **All** lists
-  services across agent terminals and projects. Process discovery uses `ss` or
+  services across agent terminals and projects. Entries distinguish webpages, APIs/services, redirects, HTTP errors and unreachable endpoints. Multiple page links on the same server are retained. Discovered ports are labelled as guessed homepages; **Diagnostics** explains the response and discovery source, with an external-browser option for blank pages. These are HTTP checks, not proof that a page rendered successfully. Process discovery uses `ss` or
   `lsof`; local URLs still work without those tools. Detached services can only
   be associated if their ancestry was observed or their URL was shared.
 - **Keep accounts separate.** Run multiple Claude or Codex logins side by side

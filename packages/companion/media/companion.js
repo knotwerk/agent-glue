@@ -164,11 +164,11 @@
     const header=element('header','web-app-header');
     const toggle=element('button','text-button web-app-toggle');
     const list=element('div','web-app-list');
-    const update=()=>{const open=expandedWebApps.has(session);list.hidden=!open;toggle.textContent=`${open?'▾':'▸'} Web apps · ${active} active`;toggle.setAttribute('aria-expanded',String(open));};
-    toggle.setAttribute('aria-label','Expand or collapse web apps');toggle.title='Active web apps in this terminal';toggle.onclick=()=>{if(expandedWebApps.has(session))expandedWebApps.delete(session);else expandedWebApps.add(session);update();};
-    const all=element('button','text-button',`All · ${total}`);all.setAttribute('aria-label','Show all web apps');all.title=`${total} active web apps across terminals`;all.onclick=()=>send({type:'showWebApps'});
+    const update=()=>{const open=expandedWebApps.has(session);list.hidden=!open;toggle.textContent=`${open?'▾':'▸'} Web apps · ${active} responding`;toggle.setAttribute('aria-expanded',String(open));};
+    toggle.setAttribute('aria-label','Expand or collapse web apps');toggle.title='Responding endpoints in this terminal';toggle.onclick=()=>{if(expandedWebApps.has(session))expandedWebApps.delete(session);else expandedWebApps.add(session);update();};
+    const all=element('button','text-button',`All · ${total}`);all.setAttribute('aria-label','Show all web apps');all.title=`${total} responding endpoints across terminals`;all.onclick=()=>send({type:'showWebApps'});
     header.append(toggle,all);apps.append(header,list);update();
-    for(const app of items){const row=element('button','item-main web-app-row');row.append(element('span','web-app-name',`${app.running?'●':'○'} ${app.label||app.url}`),element('span','web-app-address',app.url));row.title=(app.running?'Open running web app':'Service is not responding')+' — '+app.url;row.onclick=()=>send({type:'webApp',id:app.id,action:'open'});row.oncontextmenu=e=>{e.preventDefault();send({type:'webApp',id:app.id,action:'menu'});};list.append(row);}
+    for(const app of items){const row=element('button','item-main web-app-row');row.append(element('span','web-app-name',`${app.running?'●':'○'} ${app.label||app.url}`),element('span','web-app-address',(app.healthLabel?app.healthLabel+' · ':'')+app.url));row.title=(app.details||'Response not checked')+' — '+app.url;row.onclick=()=>send({type:'webApp',id:app.id,action:'open'});row.oncontextmenu=e=>{e.preventDefault();send({type:'webApp',id:app.id,action:'menu'});};list.append(row);}
     if(!items.length)list.append(element('p','task-meta','No web apps detected in this terminal.'));
   }
   function renderFiles() {

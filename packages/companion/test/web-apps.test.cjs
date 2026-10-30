@@ -30,3 +30,31 @@ test('web app labels show filenames or routes without inventing an index file',(
  assert.equal(appLabel('http://localhost:3000/dashboard/'),'dashboard/');
  assert.equal(appLabel('http://localhost:3000/%oops'),'%oops');
 });
+
+test('keeps distinct routes on a server and marks their discovery source',async()=>{
+ const apps=new WebApps(async()=>{throw Error('no discovery');},async()=>({running:true,kind:'page',statusCode:200}));
+ const session={id:'a',name:'One',cwd:'/a',pane:'%1'};
+ apps.observe(session,'http://localhost:3000/report.html http://localhost:3000/health');
+ const items=await apps.refresh([session],true);
+ assert.equal(items.length,2);assert.ok(items.every(i=>i.source==='link'));assert.ok(items.some(i=>i.url.endsWith('/report.html')));
+});
+test('HTTP probes distinguish pages, services, errors and redirects without following links',async()=>{
+ const http=require('node:http');const {probe,appStatus,appDetails}=require('../src/web-apps.cjs');
+ const requests=[];const server=http.createServer((req,res)=>{
+  requests.push(req.method+' '+req.url);
+  const statuses={'/missing':404,'/error':500,'/redirect':302};res.statusCode=statuses[req.url]||200;
+  res.setHeader('Content-Type',req.url==='/api'?'application/json':'text/html; charset=utf-8');
+  if(req.url==='/redirect')res.setHeader('Location','http://example.invalid/');
+  if(req.url==='/framed')res.setHeader('X-Frame-Options','DENY');res.end();
+ });
+ await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));
+ try{
+  const base='http://127.0.0.1:'+server.address().port;
+  for(const [route,kind] of [['/','page'],['/api','service'],['/missing','error'],['/error','error'],['/redirect','redirect']]){
+   const result=await probe(base+route);assert.equal(result.kind,kind);assert.equal(result.running,true);
+   if(kind==='error')assert.match(appStatus(result),/^HTTP [45]/);
+  }
+  const framed=await probe(base+'/framed');assert.equal(framed.frameRestricted,true);assert.match(appDetails({...framed,source:'process'}),/homepage guessed/);
+  assert.ok(requests.every(r=>r.startsWith('HEAD ')));assert.equal(requests.length,6);
+ }finally{await new Promise(resolve=>server.close(resolve));}
+});
