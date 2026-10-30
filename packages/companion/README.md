@@ -201,8 +201,11 @@ and 200 records per project. No conversation histories or agent memory are index
 ## Live terminal status
 
 The **Terminals** selector displays local lifecycle events from Claude and Codex:
-amber spinner for working, red bell for permission/input requested, green check
-for a finished turn, grey circle for idle, and grey question mark when unknown.
+consistent RAG dots: amber for working, red for permission/input requested, green
+for a finished turn, and grey for idle or unknown. Rows include plain-English status
+and elapsed/update age. The header counts red, amber, green and unknown terminals;
+these are terminal counts, not subagent counts. Hidden VS Code tool terminals are
+excluded from the list.
 Green means the agent finished responding, not that all project work is complete.
 A permission indicator clears on the next recorded tool/prompt/completion event;
 it can remain red while an approved long-running tool finishes. An event older

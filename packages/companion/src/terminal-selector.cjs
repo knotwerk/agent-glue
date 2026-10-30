@@ -5,17 +5,18 @@ function registerSelector(vscode,context,sessionForTerminal=()=>undefined,status
  const changed=new vscode.EventEmitter(),ids=new WeakMap();let nextId=0;
  const mime='application/vnd.code.tree.agentglue.terminalselector';
  let saved=context.workspaceState?.get('terminalSelector.order',[])||[],ordered=[],dragged=[],restoredSessions=false;
- const isOpen=terminal=>vscode.window.terminals.includes(terminal);
+ const listed=()=>vscode.window.terminals.filter(t=>!t.creationOptions?.hideFromUser);
+ const isOpen=terminal=>listed().includes(terminal);
  const locationKey=location=>location===2||(location&&typeof location==='object'&&'viewColumn' in location)?'editor':'panel';
  const identity=terminal=>{
   const session=sessionForTerminal(terminal);if(session)return 'tmux:'+session;
   const options=terminal.creationOptions||{};
   const base=JSON.stringify([terminal.name,String(options.cwd||''),options.shellPath||'',locationKey(options.location)]);
-  const peers=vscode.window.terminals.filter(t=>!sessionForTerminal(t)&&JSON.stringify([t.name,String(t.creationOptions?.cwd||''),t.creationOptions?.shellPath||'',locationKey(t.creationOptions?.location)])===base);
+  const peers=listed().filter(t=>!sessionForTerminal(t)&&JSON.stringify([t.name,String(t.creationOptions?.cwd||''),t.creationOptions?.shellPath||'',locationKey(t.creationOptions?.location)])===base);
   return 'terminal:'+base+':'+peers.indexOf(terminal);
  };
  const children=()=>{
-  const terminals=[...vscode.window.terminals];
+  const terminals=listed();
   const restoreSessions=!restoredSessions&&terminals.some(t=>sessionForTerminal(t));
   if(restoreSessions)restoredSessions=true;
   if(!ordered.length||restoreSessions)ordered=terminals.slice().sort((a,b)=>{const ai=saved.indexOf(identity(a)),bi=saved.indexOf(identity(b));return (ai<0?Infinity:ai)-(bi<0?Infinity:bi);});
@@ -28,11 +29,14 @@ function registerSelector(vscode,context,sessionForTerminal=()=>undefined,status
    if(!ids.has(terminal))ids.set(terminal,String(++nextId));
    const selected=terminal===vscode.window.activeTerminal,location=terminal.creationOptions?.location;
    const editor=location===2||Boolean(location&&typeof location==='object'&&'viewColumn' in location);
-   const same=vscode.window.terminals.filter(t=>t.name===terminal.name);
-   const state=status(terminal),elapsed=state?.status==='active'?Math.max(0,Math.floor((Date.now()-state.since)/60000))+'m':'';
-   const description=[elapsed,editor?'Editor':'',same.length>1?'Tab '+(same.indexOf(terminal)+1):''].filter(Boolean).join(' · ');
+   const same=listed().filter(t=>t.name===terminal.name);
+   const state=status(terminal),now=Date.now();
+   const age=at=>{const seconds=Math.max(0,Math.floor((now-at)/1000));return seconds<60?seconds+'s':Math.floor(seconds/60)+'m';};
+   const label=state?({active:'Working',blocked:'Needs input',done:'Finished',idle:'Idle',unknown:state.at?'Status stale':'No status'})[state.status]:'';
+   const elapsed=state?.status==='active'&&state.since?age(state.since):state?.at?age(state.at)+' ago':'';
+   const description=[label,elapsed,editor?'Editor':'',same.length>1?'Tab '+(same.indexOf(terminal)+1):''].filter(Boolean).join(' · ');
    return {id:ids.get(terminal),label:terminal.name,description:description||undefined,contextValue:sessionForTerminal(terminal)?'agentGlueAgentTerminal':'agentGlueTerminal',
-    iconPath:state?new vscode.ThemeIcon(({active:'sync~spin',blocked:'bell',done:'check',idle:'circle-outline',unknown:'question'})[state.status]||'question',new vscode.ThemeColor(({active:'terminal.ansiYellow',blocked:'terminal.ansiRed',done:'terminal.ansiGreen'})[state.status]||'descriptionForeground')):new vscode.ThemeIcon('terminal'),
+    iconPath:state?new vscode.ThemeIcon('circle-filled',new vscode.ThemeColor(({active:'terminal.ansiYellow',blocked:'terminal.ansiRed',done:'terminal.ansiGreen'})[state.status]||'descriptionForeground')):new vscode.ThemeIcon('terminal'),
     tooltip:terminal.name+' — '+(selected?'selected terminal':'click to focus')+'\n'+(sessionForTerminal(terminal)||'Shell terminal')+'\n'+(state?state.label+(state.at?' · '+new Date(state.at).toLocaleTimeString():''):'Shell terminal'),
     command:{command:'agentGlue.focusSelectorTerminal',title:'Focus terminal',arguments:[terminal]}};
   },getParent:()=>undefined};
@@ -46,8 +50,8 @@ function registerSelector(vscode,context,sessionForTerminal=()=>undefined,status
    await context.workspaceState?.update('terminalSelector.order',saved);changed.fire();
   }};
  const tree=vscode.window.createTreeView('agentGlue.terminalSelector',{treeDataProvider:provider,showCollapseAll:false,dragAndDropController});
- let lastSignature;
- const refresh=()=>{const signature=vscode.window.terminals.map(t=>{if(!ids.has(t))ids.set(t,String(++nextId));return [ids.get(t),t.name,sessionForTerminal(t),t===vscode.window.activeTerminal,JSON.stringify(status(t)),status(t)?.status==='active'?Math.floor(Date.now()/60000):''].join('|');}).join('\n');if(signature===lastSignature)return;lastSignature=signature;changed.fire();const terminal=vscode.window.activeTerminal;if(tree.visible&&terminal)void Promise.resolve(tree.reveal(terminal,{select:true,focus:false})).catch(()=>{});};
+ let lastSignature,lastSelected;
+ const refresh=()=>{const counts={active:0,blocked:0,done:0,unknown:0};for(const terminal of listed()){const row=status(terminal);if(row)counts[row.status in counts?row.status:'unknown']++;}tree.description=`R ${counts.blocked} · A ${counts.active} · G ${counts.done} · ? ${counts.unknown}`;const signature=listed().map(t=>{if(!ids.has(t))ids.set(t,String(++nextId));return [ids.get(t),t.name,sessionForTerminal(t),t===vscode.window.activeTerminal,JSON.stringify(status(t)),status(t)?.at||status(t)?.since?Math.floor(Date.now()/3000):''].join('|');}).join('\n');if(signature===lastSignature)return;lastSignature=signature;changed.fire();const terminal=vscode.window.activeTerminal,selectionChanged=terminal!==lastSelected;lastSelected=terminal;if(selectionChanged&&tree.visible&&terminal&&isOpen(terminal))void Promise.resolve(tree.reveal(terminal,{select:true,focus:false})).catch(()=>{});};
  const settingKey='terminalSelector.nativeTabs';
  let replaceNative=context.workspaceState?.get('terminalSelector.replaceNative',true)??true;
  async function hideNative(){
