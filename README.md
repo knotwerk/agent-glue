@@ -89,6 +89,9 @@ on macOS, dictation and clipboard images.
   Claude/Codex account directories. Review all eight Agent Glue hooks through
   `/hooks` in each Codex account; existing
   CLI sessions may need to reload their hook configuration. No agents are restarted.
+  Codex shared-background-server conversations need an exact link: right-click
+  the terminal → **Link Codex Status…**, then paste the Session ID from `/status`.
+  This avoids attributing a shared server's activity to the wrong terminal.
   Missing events and working/waiting updates older than 15 minutes show unknown. Confirmed finished turns keep their timestamped completion state. This uses no AI calls
   or conversation-history indexing. An append-only local event log supports
   recovery of the status cache without restarting sessions. Moving the selector back restores the previous

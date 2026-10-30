@@ -1,11 +1,14 @@
 'use strict';
 const path=require('node:path');
 // Native terminal controls; lifecycle status is deliberately not inferred here.
-function registerSelector(vscode,context,sessionForTerminal=()=>undefined,statusForSession=()=>({status:'unknown',label:'No lifecycle events yet'})){
+function registerSelector(vscode,context,sessionForTerminal=()=>undefined,statusForSession=()=>({status:'unknown',label:'No lifecycle events yet'}),cwdForTerminal=terminal=>terminal.shellIntegration?.cwd||terminal.creationOptions?.cwd){
  if(!vscode.window.createTreeView)return;
  const changed=new vscode.EventEmitter(),ids=new WeakMap();let nextId=0;
  const mime='application/vnd.code.tree.agentglue.terminalselector';
  let saved=context.workspaceState?.get('terminalSelector.order',[])||[],ordered=[],dragged=[],restoredSessions=false;
+ let savedGroups=context.workspaceState?.get('terminalSelector.groups',[])||[];
+ const parents=new Map(),detached=new WeakSet(),pending=new WeakSet();
+ const detachedIds=new Set(context.workspaceState?.get('terminalSelector.detached',[])||[]);
  const listed=()=>vscode.window.terminals.filter(t=>!t.creationOptions?.hideFromUser);
  const isOpen=terminal=>listed().includes(terminal);
  const locationKey=location=>location===2||(location&&typeof location==='object'&&'viewColumn' in location)?'editor':'panel';
@@ -16,7 +19,7 @@ function registerSelector(vscode,context,sessionForTerminal=()=>undefined,status
   const peers=listed().filter(t=>!sessionForTerminal(t)&&JSON.stringify([t.name,String(t.creationOptions?.cwd||''),t.creationOptions?.shellPath||'',locationKey(t.creationOptions?.location)])===base);
   return 'terminal:'+base+':'+peers.indexOf(terminal);
  };
- const children=()=>{
+ const flatChildren=()=>{
   const terminals=listed();
   const restoreSessions=!restoredSessions&&terminals.some(t=>sessionForTerminal(t));
   if(restoreSessions)restoredSessions=true;
@@ -24,6 +27,38 @@ function registerSelector(vscode,context,sessionForTerminal=()=>undefined,status
   else ordered=ordered.filter(isOpen).concat(terminals.filter(t=>!ordered.includes(t)));
   return ordered;
  };
+ const children=parent=>{
+  const flat=flatChildren();
+  for(const [child,root] of parents)if((!isOpen(child)&&!pending.has(child))||!isOpen(root))parents.delete(child);
+  for(const terminal of flat){
+   const root=terminal.creationOptions?.location?.parentTerminal;
+   if(root&&isOpen(root)&&root!==terminal&&!detached.has(terminal)&&!detachedIds.has(identity(terminal)))parents.set(terminal,parents.get(root)||root);
+  }
+  const byIdentity=new Map(flat.map(t=>[identity(t),t]));
+  for(const [rootId,childId] of savedGroups){const root=byIdentity.get(rootId),child=byIdentity.get(childId);if(root&&child&&root!==child&&!detached.has(child)&&!detachedIds.has(childId))parents.set(child,root);}
+  return flat.filter(t=>parent?parents.get(t)===parent:!parents.has(t));
+ };
+ const markDetached=terminal=>{detached.add(terminal);detachedIds.add(identity(terminal));};
+ const saveGroups=async()=>{savedGroups=[...parents].filter(([child,root])=>isOpen(child)&&isOpen(root)).map(([child,root])=>[identity(root),identity(child)]);await context.workspaceState?.update('terminalSelector.groups',savedGroups);await context.workspaceState?.update('terminalSelector.detached',[...detachedIds]);};
+ async function selectTerminal(terminal){
+  if(!isOpen(terminal))return false;
+  const selected=await new Promise(resolve=>{
+   let done=false,listener,timer;
+   const finish=value=>{if(done)return;done=true;listener?.dispose();clearTimeout(timer);resolve(value);};
+   listener=vscode.window.onDidChangeActiveTerminal(active=>{if(active===terminal)finish(true);});
+   timer=setTimeout(()=>finish(false),1500);terminal.show(false);if(vscode.window.activeTerminal===terminal)finish(true);
+  });
+  return selected&&isOpen(terminal)&&vscode.window.activeTerminal===terminal;
+ }
+ async function moveToOwnTerminal(terminal){
+  children();const root=parents.get(terminal),siblings=children(terminal);
+  if(!root&&!siblings.length)return false;
+  if(!await selectTerminal(terminal))return false;
+  await vscode.commands.executeCommand('workbench.action.terminal.unsplit');
+  markDetached(terminal);parents.delete(terminal);
+  if(!root&&siblings.length){const [next,...rest]=siblings;parents.delete(next);markDetached(next);for(const child of rest){parents.set(child,next);detached.add(child);}}
+  await saveGroups();refresh();return true;
+ }
  const status=terminal=>sessionForTerminal(terminal)?statusForSession(sessionForTerminal(terminal)):undefined;
  const statusIcon=state=>{const color=({active:'amber',blocked:'red',done:'green'})[state.status]||'grey';const media=path.join(context.extensionPath||path.resolve(__dirname,'..'),'media');return {light:vscode.Uri.file(path.join(media,'status-'+color+'-light.svg')),dark:vscode.Uri.file(path.join(media,'status-'+color+'-dark.svg'))};};
  const provider={onDidChangeTreeData:changed.event,getChildren:children,
@@ -36,17 +71,21 @@ function registerSelector(vscode,context,sessionForTerminal=()=>undefined,status
    const age=at=>{const seconds=Math.max(0,Math.floor((now-at)/1000));return seconds<60?seconds+'s':Math.floor(seconds/60)+'m';};
    const elapsed=state?.status==='active'?(state.since?age(state.since):''):state?.at?age(state.at)+' ago':'';
    const description=[elapsed,editor?'Editor':'',same.length>1?'Tab '+(same.indexOf(terminal)+1):''].filter(Boolean).join(' · ');
-   return {id:ids.get(terminal),label:terminal.name,description:description||undefined,contextValue:sessionForTerminal(terminal)?'agentGlueAgentTerminal':'agentGlueTerminal',
+   const group=children(terminal).length>0,split=parents.has(terminal),agent=Boolean(sessionForTerminal(terminal));
+   const contextValue=agent?(group?'agentGlueAgentGroupTerminal':split?'agentGlueAgentSplitTerminal':'agentGlueAgentTerminal'):(group?'agentGlueGroupTerminal':split?'agentGlueSplitTerminal':'agentGlueTerminal');
+   return {id:ids.get(terminal),label:terminal.name,description:description||undefined,contextValue,collapsibleState:group?2:0,
     iconPath:state?statusIcon(state):new vscode.ThemeIcon('terminal'),
     tooltip:terminal.name+' — '+(selected?'selected terminal':'click to focus')+'\n'+(sessionForTerminal(terminal)||'Shell terminal')+'\n'+(state?state.label+(elapsed?' · '+elapsed:'')+(state.at?' · '+new Date(state.at).toLocaleTimeString():''):'Shell terminal'),
     command:{command:'agentGlue.focusSelectorTerminal',title:'Focus terminal',arguments:[terminal]}};
-  },getParent:()=>undefined};
+  },getParent:terminal=>{children();return parents.get(terminal);}};
  const dragAndDropController={dragMimeTypes:[mime],dropMimeTypes:[mime],
   handleDrag(source,transfer){dragged=source.filter(isOpen);transfer.set(mime,new vscode.DataTransferItem('terminals'));},
   async handleDrop(target,transfer){
    if(!transfer.get(mime)||!dragged.length)return;
-   const moving=dragged.filter(isOpen);dragged=[];if(!moving.length||moving.includes(target))return;
-   const rest=children().filter(t=>!moving.includes(t)),index=target?rest.indexOf(target):rest.length;
+   let moving=dragged.filter(isOpen);dragged=[];if(!moving.length||moving.includes(target))return;
+   children();for(const terminal of moving){const root=parents.get(terminal);if(root&&target!==root&&parents.get(target)!==root){if(!await moveToOwnTerminal(terminal))return;}}
+   moving=[...new Set(moving.flatMap(t=>[t,...children(t)]))];
+   const rest=flatChildren().filter(t=>!moving.includes(t)),index=target?rest.indexOf(target):rest.length;
    if(index<0)return;rest.splice(index,0,...moving);ordered=rest;restoredSessions=true;saved=ordered.map(identity);
    await context.workspaceState?.update('terminalSelector.order',saved);changed.fire();
   }};
@@ -73,10 +112,18 @@ function registerSelector(vscode,context,sessionForTerminal=()=>undefined,status
  context.subscriptions.push(changed,tree,
   vscode.commands.registerCommand('agentGlue.newSelectorTerminal',()=>vscode.commands.executeCommand('workbench.action.terminal.newWithProfile')),
   vscode.commands.registerCommand('agentGlue.focusSelectorTerminal',terminal=>{if(isOpen(terminal))terminal.show(false);}),
-  vscode.commands.registerCommand('agentGlue.splitSelectorTerminal',terminal=>{
+  vscode.commands.registerCommand('agentGlue.renameSelectorTerminal',async terminal=>{
+   // show() crosses the extension-host boundary. Wait for confirmation before
+   // invoking the native rename dialog so another selected row isn't renamed.
+   if(!await selectTerminal(terminal))return;
+   await vscode.commands.executeCommand('workbench.action.terminal.rename');refresh();
+  }),
+  vscode.commands.registerCommand('agentGlue.moveSelectorTerminal',moveToOwnTerminal),
+  vscode.commands.registerCommand('agentGlue.splitSelectorTerminal',async terminal=>{
    if(!isOpen(terminal))return;
-   const cwd=terminal.shellIntegration?.cwd||terminal.creationOptions?.cwd;
-   vscode.window.createTerminal({location:{parentTerminal:terminal},...(cwd?{cwd}:{})}).show(false);
+   const cwd=await cwdForTerminal(terminal);if(!isOpen(terminal))return;
+   const split=vscode.window.createTerminal({name:'zsh',shellPath:'zsh',location:{parentTerminal:terminal},...(cwd?{cwd}:{})});
+   pending.add(split);parents.set(split,parents.get(terminal)||terminal);split.show(false);await saveGroups();refresh();
   }),
   vscode.commands.registerCommand('agentGlue.tryTerminalSelector',async()=>{
    replaceNative=true;await context.workspaceState?.update('terminalSelector.replaceNative',true);
@@ -95,7 +142,13 @@ function registerSelector(vscode,context,sessionForTerminal=()=>undefined,status
    await vscode.commands.executeCommand('vscode.moveViews',{viewIds:['agentGlue.terminalSelector'],destinationId:'workbench.view.extension.agentGlueSelector'});
    await restoreNative();
   }));
- for(const event of ['onDidOpenTerminal','onDidCloseTerminal','onDidChangeActiveTerminal','onDidChangeTerminalState'])if(vscode.window[event])context.subscriptions.push(vscode.window[event](refresh));
+ if(vscode.window.onDidOpenTerminal)context.subscriptions.push(vscode.window.onDidOpenTerminal(terminal=>{const wasPending=pending.has(terminal);pending.delete(terminal);children();if(wasPending)void saveGroups();refresh();}));
+ if(vscode.window.onDidCloseTerminal)context.subscriptions.push(vscode.window.onDidCloseTerminal(terminal=>{
+  const siblings=[...parents].filter(([child,root])=>root===terminal&&isOpen(child)).map(([child])=>child);
+  parents.delete(terminal);if(siblings.length){const [next,...rest]=siblings;parents.delete(next);markDetached(next);for(const child of rest){parents.set(child,next);detached.add(child);}}
+  children();void saveGroups();refresh();
+ }));
+ for(const event of ['onDidChangeActiveTerminal','onDidChangeTerminalState'])if(vscode.window[event])context.subscriptions.push(vscode.window[event](refresh));
  context.subscriptions.push(tree.onDidChangeVisibility(()=>{refresh();hideSafely();}));
  return {provider,refresh,dragAndDropController,get visible(){return tree.visible;}};
 }

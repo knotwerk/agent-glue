@@ -39,7 +39,7 @@ test('new terminal toolbar action opens the native profile picker without creati
  test('row controls target exact objects and preserve order across registration',async()=>{
  const h=host();let split;
  h.vscode.window.createTerminal=options=>{split=options;return {show(){}};};
- h.commands.get('agentGlue.splitSelectorTerminal')(h.b);assert.equal(split.location.parentTerminal,h.b);
+ await h.commands.get('agentGlue.splitSelectorTerminal')(h.b);assert.equal(split.location.parentTerminal,h.b);
  assert.equal(h.commands.has('agentGlue.closeSelectorTerminal'),false);
  const transfer=new Map();h.selector.dragAndDropController.handleDrag([h.b],transfer);
  await h.selector.dragAndDropController.handleDrop(h.a,transfer);
@@ -52,7 +52,7 @@ test('fork hover action uses existing command and only mapped agent rows',()=>{
  const h=host();assert.equal(h.selector.provider.getTreeItem(h.a).contextValue,'agentGlueAgentTerminal');
  const shell=registerSelector(h.vscode,h.context);assert.equal(shell.provider.getTreeItem(h.a).contextValue,'agentGlueTerminal');
  const menu=require('../package.json').contributes.menus['view/item/context'];
- const fork=menu.find(item=>item.command==='agentGlue.fork');assert.match(fork.when,/viewItem == agentGlueAgentTerminal/);
+ const fork=menu.find(item=>item.command==='agentGlue.fork');assert.match(fork.when,/viewItem =~.*agentGlueAgent/);
  assert.ok(fork.group<menu.find(item=>item.command==='agentGlue.splitSelectorTerminal').group);
  assert.ok(!menu.some(item=>/close/i.test(item.command)));
 });
@@ -87,4 +87,61 @@ test('selected status dots retain intrinsic color and update when status changes
  h.vscode.window.activeTerminal=h.a;state='done';const after=list.provider.getTreeItem(h.a).iconPath;
  assert.notDeepEqual(after,before);assert.match(after.dark.fsPath,/status-green-dark.svg$/);
  const fs=require('node:fs');for(const uri of Object.values(after)){const svg=fs.readFileSync(uri.fsPath,'utf8');assert.match(svg,/fill="#[0-9a-f]{6}"/);assert.doesNotMatch(svg,/currentColor/);}
+});
+
+test('context Rename waits for the clicked terminal and never renames a closed row',async()=>{
+ const h=host();let activated;
+ h.vscode.window.onDidChangeActiveTerminal=fn=>{activated=fn;return {dispose(){}};};
+ registerSelector(h.vscode,h.context);
+ const action=h.commands.get('agentGlue.renameSelectorTerminal');
+ const rename=action(h.b);assert.deepEqual(h.shown,[['b',false]]);assert.deepEqual(h.calls,[]);
+ h.vscode.window.activeTerminal=h.b;activated(h.b);await rename;
+ assert.deepEqual(h.calls,[['workbench.action.terminal.rename']]);
+ h.vscode.window.terminals=[h.a];await action(h.b);assert.equal(h.calls.length,1);
+ const menu=require('../package.json').contributes.menus['view/item/context'];
+ assert.ok(menu.some(m=>m.command==='agentGlue.renameSelectorTerminal'&&m.when==='view == agentGlue.terminalSelector'&&!m.group.startsWith('inline')));
+});
+
+test('Rename aborts if the terminal closes before selection completes',async()=>{
+ const h=host();let activated;
+ h.vscode.window.onDidChangeActiveTerminal=fn=>{activated=fn;return {dispose(){}};};registerSelector(h.vscode,h.context);
+ const rename=h.commands.get('agentGlue.renameSelectorTerminal')(h.b);
+ h.vscode.window.terminals=[h.a];h.vscode.window.activeTerminal=h.b;activated(h.b);await rename;
+ assert.deepEqual(h.calls,[]);
+});
+
+test('Split creates zsh in the resolved agent folder, groups rows and persists the group',async()=>{
+ const h=host();let options,child;
+ h.a.creationOptions={cwd:'/old/workspace'};
+ h.vscode.window.createTerminal=value=>{options=value;child={name:value.name,creationOptions:value,show(){h.vscode.window.activeTerminal=child;}};h.vscode.window.terminals.push(child);return child;};
+ const list=registerSelector(h.vscode,h.context,t=>t===h.a?'agent-a':undefined,()=>({status:'unknown'}),async()=>'/actual/agent/project');
+ await h.commands.get('agentGlue.splitSelectorTerminal')(h.a);
+ assert.equal(options.shellPath,'zsh');assert.equal(options.cwd,'/actual/agent/project');assert.equal(options.location.parentTerminal,h.a);
+ assert.deepEqual(list.provider.getChildren(),[h.a,h.b]);assert.deepEqual(list.provider.getChildren(h.a),[child]);
+ assert.equal(list.provider.getParent(child),h.a);assert.equal(list.provider.getTreeItem(h.a).collapsibleState,2);
+ assert.equal(list.provider.getTreeItem(child).contextValue,'agentGlueSplitTerminal');
+ const again=registerSelector(h.vscode,h.context,t=>t===h.a?'agent-a':undefined);assert.deepEqual(again.provider.getChildren(h.a),[child]);
+ child.show=()=>{h.vscode.window.activeTerminal=child;};await h.commands.get('agentGlue.moveSelectorTerminal')(child);
+ assert.deepEqual(h.calls.at(-1),['workbench.action.terminal.unsplit']);
+ assert.equal(again.provider.getParent(child),undefined);assert.ok(again.provider.getChildren().includes(child));
+ const afterReload=registerSelector(h.vscode,h.context,t=>t===h.a?'agent-a':undefined);assert.equal(afterReload.provider.getParent(child),undefined);
+});
+
+test('dragging a split onto blank space detaches it; dragging a group keeps its members',async()=>{
+ const h=host();h.a.creationOptions={cwd:'/project'};const child={name:'zsh',creationOptions:{location:{parentTerminal:h.a}},show(){h.vscode.window.activeTerminal=child;}};
+ h.vscode.window.terminals.push(child);const list=registerSelector(h.vscode,h.context);
+ assert.deepEqual(list.provider.getChildren(h.a),[child]);
+ let transfer=new Map();list.dragAndDropController.handleDrag([h.a],transfer);await list.dragAndDropController.handleDrop(undefined,transfer);
+ assert.equal(h.calls.length,0);assert.equal(list.provider.getParent(child),h.a);
+ transfer=new Map();list.dragAndDropController.handleDrag([child],transfer);await list.dragAndDropController.handleDrop(undefined,transfer);
+ assert.deepEqual(h.calls,[['workbench.action.terminal.unsplit']]);assert.equal(list.provider.getParent(child),undefined);
+});
+
+test('moving the first pane out preserves the remaining split group',async()=>{
+ const h=host();h.a.show=()=>{h.vscode.window.activeTerminal=h.a;};
+ const c={name:'left',creationOptions:{location:{parentTerminal:h.a}}},d={name:'right',creationOptions:{location:{parentTerminal:h.a}}};h.vscode.window.terminals.push(c,d);
+ const list=registerSelector(h.vscode,h.context);assert.deepEqual(list.provider.getChildren(h.a),[c,d]);
+ await h.commands.get('agentGlue.moveSelectorTerminal')(h.a);
+ assert.equal(list.provider.getParent(c),undefined);assert.equal(list.provider.getParent(d),c);assert.deepEqual(list.provider.getChildren(h.a),[]);
+ const restored=registerSelector(h.vscode,h.context);assert.equal(restored.provider.getParent(d),c);assert.equal(restored.provider.getParent(c),undefined);
 });

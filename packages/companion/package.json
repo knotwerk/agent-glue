@@ -1,5 +1,5 @@
 {
-  "version": "0.1.74",
+  "version": "0.1.75",
   "activationEvents": [
     "onStartupFinished"
   ],
@@ -114,6 +114,20 @@
         "command": "agentGlue.newSelectorTerminal",
         "title": "New Terminal (Choose Profile)",
         "icon": "$(add)"
+      },
+      {
+        "command": "agentGlue.renameSelectorTerminal",
+        "title": "Rename Terminal",
+        "icon": "$(edit)"
+      },
+      {
+        "command": "agentGlue.moveSelectorTerminal",
+        "title": "Move to Own Terminal",
+        "icon": "$(ungroup-by-ref-type)"
+      },
+      {
+        "command": "agentGlue.linkCodexStatus",
+        "title": "Link Codex Status\u2026"
       }
     ],
     "viewsContainers": {
@@ -235,13 +249,40 @@
         },
         {
           "command": "agentGlue.fork",
-          "when": "view == agentGlue.terminalSelector && viewItem == agentGlueAgentTerminal",
+          "when": "view == agentGlue.terminalSelector && viewItem =~ /^agentGlueAgent/",
           "group": "inline@1"
+        },
+        {
+          "command": "agentGlue.renameSelectorTerminal",
+          "when": "view == agentGlue.terminalSelector",
+          "group": "1_manage@1"
+        },
+        {
+          "command": "agentGlue.moveSelectorTerminal",
+          "when": "view == agentGlue.terminalSelector && viewItem =~ /GroupTerminal$|SplitTerminal$/",
+          "group": "1_manage@2"
+        },
+        {
+          "command": "agentGlue.linkCodexStatus",
+          "when": "view == agentGlue.terminalSelector && viewItem =~ /^agentGlueAgent/",
+          "group": "2_status"
         }
       ],
       "commandPalette": [
         {
           "command": "agentGlue.splitSelectorTerminal",
+          "when": "false"
+        },
+        {
+          "command": "agentGlue.renameSelectorTerminal",
+          "when": "false"
+        },
+        {
+          "command": "agentGlue.moveSelectorTerminal",
+          "when": "false"
+        },
+        {
+          "command": "agentGlue.linkCodexStatus",
           "when": "false"
         }
       ]

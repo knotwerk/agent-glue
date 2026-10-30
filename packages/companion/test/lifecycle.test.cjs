@@ -97,11 +97,11 @@ test('timers use the recorded prompt and never a tool heartbeat or an already fi
 
 test('hook pipeline records fixed diagnostic codes without raw input and uses injected tmux metadata',async()=>{
  const {tempDir}=require('../../../test/support/tmp.cjs');const {observe}=require('../src/lifecycle-hook.cjs');const base=tempDir('hook-diagnostics');
- await observe({base,env:{},exec:()=>assert.fail('No tmux without pane identity')});
+ await observe({base,input:['{'],exec:()=>assert.fail('No tmux on invalid JSON')});
  await observe({base,env:{TMUX_PANE:'%2'},input:['{"prompt":"private"'],exec:()=>assert.fail('No tmux on invalid JSON')});
- await observe({base,env:{TMUX_PANE:'%2'},input:[JSON.stringify({hook_event_name:'Stop',session_id:'chat',prompt:'private',transcript_path:'/secret'})],exec:async(file,args)=>{assert.equal(file,'tmux');assert.equal(args[0],'display-message');return {stdout:'10\x1f%2\x1f5\n'};}});
+ await observe({base,env:{TMUX_PANE:'%2'},input:[JSON.stringify({hook_event_name:'Stop',session_id:'chat',prompt:'private',transcript_path:'/secret'})],pid:5001,exec:async(file,args)=>{if(file==='ps')return {stdout:'5001 5000\n5000 1\n'};assert.equal(file,'tmux');assert.equal(args[0],'list-panes');return {stdout:'5000\x1f10\x1f%2\x1f5\n'};}});
  const diagnostics=await fs.readFile(path.join(base,'diagnostics.jsonl'),'utf8');assert.doesNotMatch(diagnostics,/private|secret|prompt/);
- assert.deepEqual(diagnostics.trim().split('\n').filter(Boolean).map(x=>JSON.parse(x).stage),['missing_tmux_pane','input']);
+ assert.deepEqual(diagnostics.trim().split('\n').filter(Boolean).map(x=>JSON.parse(x).stage),['input','input']);
  const lifecycle=new Lifecycle(base);await lifecycle.refresh([session]);assert.equal(lifecycle.get(session.sessionName).status,'done');
 });
 
@@ -110,4 +110,41 @@ test('journal refuses symlinks rather than appending outside observer storage',a
  const base=tempDir('journal-symlink'),dir=path.join(base,key('10','%2'));await fs.mkdir(dir);
  const protectedFile=path.join(base,'protected');await fs.writeFile(protectedFile,'unchanged');await fs.symlink(protectedFile,path.join(dir,'events.jsonl'));
  await assert.rejects(writeEvent(base,record('Stop',1000)));assert.equal(await fs.readFile(protectedFile,'utf8'),'unchanged');
+});
+
+test('Codex hook uses actual process ancestry despite a stale or unrelated TMUX_PANE',async()=>{
+ const {tempDir}=require('../../../test/support/tmp.cjs');const {observe}=require('../src/lifecycle-hook.cjs');
+ const base=tempDir('codex-stale-pane'),now=Date.now();
+ const exec=async(file,args)=>{
+  if(file==='ps')return {stdout:'5002 5001\n5001 5000\n5000 4000\n4000 1\n6000 4000\n'};
+  assert.deepEqual(args.slice(0,3),['list-panes','-a','-F']);
+  return {stdout:'5000\x1f10\x1f%2\x1f5\n6000\x1f10\x1f%84\x1f6\n'};
+ };
+ for(const [event,at] of [['UserPromptSubmit',now-1000],['Stop',now]])await observe({base,pid:5002,env:{TMUX_PANE:'%84'},input:[JSON.stringify({hook_event_name:event,session_id:'chat'})],exec,now:()=>at});
+ const lifecycle=new Lifecycle(base);await lifecycle.refresh([session,{...session,pane:'%84',created:'6',sessionName:'unrelated'}]);
+ assert.equal(lifecycle.get(session.sessionName).status,'done');assert.equal(lifecycle.get('unrelated').status,'unknown');
+});
+
+test('pane ancestry refuses detached hooks, cyclic process data and ambiguous linked sessions',()=>{
+ const {identityFromProcesses}=require('../src/lifecycle-hook.cjs');
+ const pane='5000\x1f10\x1f%2\x1f5';
+ assert.equal(identityFromProcesses(pane,'5002 5001\n5001 1',5002),undefined);
+ assert.equal(identityFromProcesses(pane,'5002 5001\n5001 5002',5002),undefined);
+ assert.equal(identityFromProcesses(pane+'\n5000\x1f10\x1f%2\x1f6','5002 5000\n5000 1',5002),undefined);
+});
+
+test('shared daemon hooks use an exact thread binding without inheriting a terminal environment',async()=>{
+ const {tempDir}=require('../../../test/support/tmp.cjs');const {observe,identityFromProcesses}=require('../src/lifecycle-hook.cjs');const base=tempDir('daemon-thread-binding');
+ const panes='5000\x1f10\x1f%2\x1f5\x1fchat\n6000\x1f10\x1f%84\x1f6\x1fother';
+ await observe({base,pid:9000,env:{},input:[JSON.stringify({hook_event_name:'Stop',session_id:'chat'})],exec:async file=>({stdout:file==='tmux'?panes:'9000 8000\n8000 1\n'})});
+ const lifecycle=new Lifecycle(base);await lifecycle.refresh([session]);assert.equal(lifecycle.get(session.sessionName).status,'done');
+ assert.equal(identityFromProcesses(panes+'\n6001\x1f10\x1f%85\x1f7\x1fchat','9000 1',9000,'chat'),undefined,'duplicate bindings must not select a terminal arbitrarily');
+});
+
+test('linking parses only a session ID and rejects stale pane identities',async()=>{
+ const {parseThreadId,bindThread}=require('../src/lifecycle.cjs');const id='11111111-2222-3333-4444-555555555555';
+ assert.equal(parseThreadId('Session: '+id),id);assert.equal(parseThreadId(id),id);assert.equal(parseThreadId('made up '+id),undefined);
+ const calls=[];await bindThread(session,id,async(file,args)=>{calls.push(args);return {stdout:'10\x1f%2\x1f5\n'};});
+ assert.deepEqual(calls[1],['set-option','-p','-t','%2','@agent_glue_thread_id',id]);
+ await assert.rejects(bindThread(session,id,async()=>({stdout:'10\x1f%2\x1f6\n'})),/terminal changed/);
 });

@@ -1,7 +1,7 @@
 'use strict';
 const fs=require('node:fs/promises'),path=require('node:path');
 const {EVENTS,root,key,storedEvent,atomicJson}=require('./lifecycle-hook.cjs');
-const NO_EVENTS='No lifecycle events yet. In each Codex account, use /hooks to review and enable all Agent Glue entries (--agent-glue-hook).';
+const NO_EVENTS='No lifecycle events yet. Review Agent Glue hooks in /hooks. For Codex shared-server sessions, right-click → Link Codex Status using the Session ID from /status.';
 const REPLAY_BYTES=2*1024*1024;
 async function readJson(file,maxBytes){
  try{const stat=await fs.lstat(file);if(!stat.isFile()||stat.isSymbolicLink()||stat.size>maxBytes)return;return JSON.parse(await fs.readFile(file,'utf8'));}catch{return;}
@@ -106,4 +106,14 @@ async function install({home=require('node:os').homedir(),source,node=process.ex
  }
  return results;
 }
-module.exports={Lifecycle,summarize,mergeHooks,install};
+function parseThreadId(value){
+ const uuid='[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}';
+ return String(value).trim().match(new RegExp('^('+uuid+')$','i'))?.[1]?.toLowerCase()||String(value).match(new RegExp('^\\s*(?:│\\s*)?Session:\\s*('+uuid+')\\s*(?:│)?\\s*$','im'))?.[1]?.toLowerCase();
+}
+async function bindThread(session,value,exec){
+ const thread=parseThreadId(value);if(!thread)throw Error('Paste the Session ID from Codex /status.');
+ const {stdout}=await exec('tmux',['display-message','-p','-t',session.pane,'#{pid}\x1f#{pane_id}\x1f#{session_created}']);
+ if(stdout.trim()!==[session.serverPid,session.pane,session.created].join('\x1f'))throw Error('This terminal changed while linking. Try again.');
+ await exec('tmux',['set-option','-p','-t',session.pane,'@agent_glue_thread_id',thread]);return thread;
+}
+module.exports={Lifecycle,summarize,mergeHooks,install,parseThreadId,bindThread};

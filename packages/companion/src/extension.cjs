@@ -31,7 +31,11 @@ function activate(context){
   const uploadBatches=new Map();
   const uploadBusy=()=>clipboardBusy||uploadBatches.size||uploads.pending.size||uploads.active.size;
   const lifecycle=vscode.window.createTreeView?new (require('./lifecycle.cjs').Lifecycle)(path.join(context.globalStorageUri.fsPath,'lifecycle')):undefined;
-  const terminalSelector=vscode.window.createTreeView?require('./terminal-selector.cjs').registerSelector(vscode,context,terminal=>api?.sessionForTerminal(terminal),name=>lifecycle.get(name)):undefined;
+  const terminalSelector=vscode.window.createTreeView?require('./terminal-selector.cjs').registerSelector(vscode,context,terminal=>api?.sessionForTerminal(terminal),name=>lifecycle.get(name),async terminal=>{
+    const link=await sessionsApi(),name=link?.sessionForTerminal(terminal);
+    const cwd=name?(await core.sessions()).find(session=>session.sessionName===name)?.cwd:undefined;
+    return cwd||terminal.shellIntegration?.cwd||terminal.creationOptions?.cwd;
+  }):undefined;
   let resourceTab='files',prFilter=context.workspaceState.get('prFilter','all'),resourceItems=[],resourceStatus='',resourceKey='',resourceRoot,resourceGeneration=0,resourceLoadedAt=0;
   let prSort=context.workspaceState.get('prSort','title'),prReadFilter=context.workspaceState.get('prReadFilter','all');
   const prRead=context.workspaceState.get('prRead',{});
@@ -540,6 +544,16 @@ function activate(context){
   context.subscriptions.push(vscode.window.registerWebviewViewProvider('agentGlue.companion',{resolveWebviewView(view){sidebar=view;const webview=view.webview;sidebarWebview=webview;setup(webview,false);view.onDidChangeVisibility(()=>{if(view.visible)void refresh();});view.onDidDispose(()=>{if(sidebar===view){sidebar=undefined;sidebarWebview=undefined;}views.delete(webview);});void refresh();}},{webviewOptions:{retainContextWhenHidden:true}}));
   const command=(name,fn)=>context.subscriptions.push(vscode.commands.registerCommand(name,async(...args)=>{try{return await fn(...args);}catch(error){vscode.window.showErrorMessage(error.message);}}));
   command('agentGlue.fork',forkConversation);
+  command('agentGlue.linkCodexStatus',async terminal=>{
+    if(!vscode.window.terminals.includes(terminal))return;
+    const link=await sessionsApi(),name=link?.sessionForTerminal(terminal);
+    const session=(await core.sessions()).find(row=>row.sessionName===name);
+    if(!session?.profile.startsWith('codex'))throw Error('Choose a Codex terminal to link.');
+    const {parseThreadId,bindThread}=require('./lifecycle.cjs');
+    const value=await vscode.window.showInputBox({title:'Link Codex Status — '+terminal.name,prompt:'Run /status in this Codex conversation, then paste its Session ID here. This links status without restarting the conversation.',validateInput:text=>parseThreadId(text)?undefined:'Paste a Session ID or the Session: line from /status.'});
+    if(value===undefined||!vscode.window.terminals.includes(terminal))return;
+    await bindThread(session,value,core.run);await refreshLifecycle();
+  });
   command('agentGlue.webApps',showApps);
   command('agentGlue.showfiles',()=>handle({type:'resourceTab',tab:'files'},sidebarWebview));
   command('agentGlue.showtasks',()=>handle({type:'resourceTab',tab:'tasks'},sidebarWebview));

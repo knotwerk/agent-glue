@@ -44,23 +44,48 @@ async function writeEvent(base,event){
  const parent=await fs.open(base,'r');try{await parent.sync();}finally{await parent.close();}
  await atomicJson(path.join(dir,event.event+'.json'),event);
 }
-async function observe({base,env=process.env,input=process.stdin,exec=require('node:util').promisify(require('node:child_process').execFile),now=Date.now}={}){
- let stage='input';
+function identityFromProcesses(panes,processes,pid,thread){
+ const bound=panes.trim().split('\n').map(line=>line.split('\x1f')).filter(fields=>thread&&fields[4]===thread);
+ if(bound.length===1){const [,server,pane,created]=bound[0];if(/^\d+$/.test(server)&&/^%\d+$/.test(pane)&&/^\d+$/.test(created))return {server,pane,created};}
+ if(bound.length>1)return;
+ const parents=new Map();for(const line of processes.split('\n')){const fields=line.trim().split(/\s+/);if(fields.length===2&&fields.every(v=>/^\d+$/.test(v)))parents.set(fields[0],fields[1]);}
+ const ancestors=[];let current=String(pid);
+ while(current&&current!=='1'&&!ancestors.includes(current)&&ancestors.length<64){ancestors.push(current);current=parents.get(current);}
+ const matches=panes.trim().split('\n').map(line=>{
+  const [panePid,server,pane,created]=line.split('\x1f');return {panePid,server,pane,created,distance:ancestors.indexOf(panePid)};
+ }).filter(row=>row.distance>=0&&/^\d+$/.test(row.server)&&/^%\d+$/.test(row.pane)&&/^\d+$/.test(row.created)).sort((a,b)=>a.distance-b.distance);
+ if(!matches.length)return;
+ const nearest=matches.filter(row=>row.distance===matches[0].distance);
+ if(new Set(nearest.map(row=>[row.server,row.pane,row.created].join(':'))).size!==1)return;
+ const {server,pane,created}=nearest[0];return {server,pane,created};
+}
+async function observe({base,input=process.stdin,exec=require('node:util').promisify(require('node:child_process').execFile),now=Date.now,pid=process.pid}={}){
+ let stage='input',eventName,sessionId;
  try{
-  if(!/^%\d+$/.test(env.TMUX_PANE||'')){stage='missing_tmux_pane';throw Error('Missing pane');}
   let text='';for await(const chunk of input){text+=chunk;if(text.length>1024*1024)throw Error('Oversized input');}
-  const payload=JSON.parse(text),receivedAt=now();stage='tmux_lookup';
-  const {stdout}=await exec('tmux',['display-message','-p','-t',env.TMUX_PANE,'#{pid}\x1f#{pane_id}\x1f#{session_created}'],{timeout:600,maxBuffer:1024});
-  const [server,pane,created]=stdout.trim().split('\x1f');if(!/^\d+$/.test(server)||!/^%\d+$/.test(pane)||!/^\d+$/.test(created))throw Error('Invalid tmux identity');
-  const event=eventRecord(payload,{server,pane,created},receivedAt);stage='storage';if(event)await writeEvent(base,event);
- }catch{
+  const payload=JSON.parse(text),receivedAt=now();eventName=EVENTS.includes(payload.hook_event_name)?payload.hook_event_name:undefined;sessionId=typeof payload.session_id==='string'&&payload.session_id.length<=200?payload.session_id:undefined;stage='tmux_lookup';
+  if(!eventName||!sessionId||payload.agent_id)return;
+  // Codex may reuse a shell environment snapshot containing another pane ID.
+  // Match this hook's actual ancestry to pane roots; never trust TMUX_PANE as
+  // identity, even when it happens to point at a still-live unrelated pane.
+  const [panes,processes]=await Promise.all([
+   exec('tmux',['list-panes','-a','-F','#{pane_pid}\x1f#{pid}\x1f#{pane_id}\x1f#{session_created}\x1f#{@agent_glue_thread_id}'],{timeout:600,maxBuffer:1024*1024}),
+   exec('ps',['-eo','pid=,ppid='],{timeout:600,maxBuffer:1024*1024})
+  ]);
+  stage='tmux_identity';const identity=identityFromProcesses(panes.stdout,processes.stdout,pid,sessionId);
+  if(!identity)throw Error('No unique pane ancestor');
+  const event=eventRecord(payload,identity,receivedAt);stage='storage';if(event)await writeEvent(base,event);
+ }catch(error){
   // Only fixed reason codes, never exception text or hook input. Fail open even
   // when the diagnostic log itself cannot be written.
-  try{await privateDirectory(base);await appendRecord(path.join(base,'diagnostics.jsonl'),{at:Date.now(),stage});}catch{}
+  const code=/^E[A-Z0-9_]{1,60}$/.test(error?.code)?error.code:typeof error?.code==='number'?error.code:undefined;
+  const stderr=String(error?.stderr||'');
+  const reason=error?.killed?'timeout':/no server running|error connecting|failed to connect/.test(stderr)?'server_unreachable':/can't find pane|no such pane|can't find session/.test(stderr)?'pane_not_found':undefined;
+  try{await privateDirectory(base);await appendRecord(path.join(base,'diagnostics.jsonl'),{at:Date.now(),stage,code,reason,event:eventName,session:sessionId});}catch{}
  }
 }
 if(require.main===module&&process.argv.includes('--agent-glue-hook')){
  const rootIndex=process.argv.indexOf('--event-root'),base=rootIndex>=0?process.argv[rootIndex+1]:root();
  observe({base}).finally(()=>process.stdout.write('{}\n'));
 }
-module.exports={EVENTS,root,key,eventRecord,storedEvent,writeEvent,appendRecord,atomicJson,observe};
+module.exports={EVENTS,root,key,eventRecord,storedEvent,writeEvent,appendRecord,atomicJson,observe,identityFromProcesses};

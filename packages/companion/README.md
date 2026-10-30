@@ -223,6 +223,14 @@ different hook does not approve these observers. Agent Glue never bypasses hook
 trust. Existing CLI sessions may need to reload their hook
 configuration. No terminal is restarted automatically.
 
+Codex's **Local background server** runs hooks outside the terminal process tree
+and can inherit an obsolete `TMUX_PANE`. For these conversations, right-click the
+terminal → **Link Codex Status…** and paste the **Session** ID from `/status` once.
+The link uses an exact conversation ID stored in tmux, not a folder/name guess;
+forks with an existing exact ID can reuse it. Relink when switching to a different
+conversation in the same terminal. Direct CLI processes are matched through their
+actual process ancestry. Neither method reads conversation history or restarts agents.
+
 The observer only stores event names, timestamps, session IDs and tmux identity
 under Companion's global storage. It discards prompt text, tool payloads and
 transcript paths and does not read CLI history. Each pane has an append-only
@@ -258,7 +266,12 @@ the selector view can also be hidden through its view menu.
 The **+** in the Terminals toolbar opens VS Code's native terminal-profile picker.
 Choose from your configured shell and CLI profiles; cancelling creates nothing.
 The **Terminals** list supports hover actions for Fork Conversation (on mapped agent sessions) and Split (a new shell beside the
-chosen terminal). It deliberately has no Close action. Drag rows to reorder;
+chosen terminal). Split starts **zsh** in the agent pane's current folder, falling
+back to shell integration or the terminal's starting folder for ordinary shells.
+Splits created here appear together in an expandable group, retained across reloads.
+Right-click for **Rename Terminal** or **Move to Own Terminal**. Drag a split onto
+blank space or outside its group to move it into its own native terminal group;
+drag the parent row to reorder the group together. It deliberately has no Close action. Drag rows to reorder;
 the order is saved per workspace using tmux session names where known. Ordinary
 shells use their name, starting folder and location; indistinguishable shells
 can only be matched by occurrence after a reload. Duplicate names are labelled
