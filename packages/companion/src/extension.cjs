@@ -7,6 +7,7 @@ const crypto=require('node:crypto');
 const core=require('./core.cjs');
 const {WebApps,appLabel}=require('./web-apps.cjs');
 const resources=require('./resources.cjs');
+const {TerminalActivity,terminalUri}=require('./terminal-activity.cjs');
 const {BrowserLinks}=require('./browser-links.cjs');
 const {openPullRequest,detail:reviewDetail,openReviewDocument}=require('./pull-request.cjs');
 const {renderSidebar,renderDraft}=require('./views.cjs');
@@ -16,6 +17,7 @@ function activate(context){
   const views=new Set(),panels=new Map(),uploads=new core.Uploads();
   const browserLinks=new BrowserLinks({mermaidPath:path.join(context.extensionPath,'dist/mermaid.js')});
   context.subscriptions.push(browserLinks);
+  let terminalActivity;const activityReports={};
   const statusReports=context.workspaceState.get('statusReports',{});let statusRunBusy=false,statusRunSessionId;
   const apps=new WebApps(core.run);let appsPanel,appsSignature,forkBusy=false;
   let sidebar,sidebarWebview,draftPanel,draftWebview,sessionList=[],selected=context.workspaceState.get('selected'),files=context.workspaceState.get('files',{});
@@ -152,12 +154,30 @@ function activate(context){
       if(selected!==source.id||active!==vscode.window.activeTerminal||!sidebar?.visible)throw Error('Selected terminal changed. Run status again.');
       const previous={items:runner.combine(statusReports[source.id],local.items)};
       const report=await runner.summarize({...source},stdout,path.join(context.globalStorageUri.fsPath,'status-runs'),{previous});
-      statusReports[source.id]=report;
+      statusReports[source.id]=report;activityReports[source.id]=report;
       const oldest=Object.keys(statusReports).sort((a,b)=>statusReports[b].updatedAt.localeCompare(statusReports[a].updatedAt));for(const id of oldest.slice(100))delete statusReports[id];
       await context.workspaceState.update('statusReports',statusReports);
       status='Status updated for '+source.name+'.';
       if(selected===source.id&&resourceTab==='tasks')loadResources(true);
     }finally{statusRunBusy=false;statusRunSessionId=undefined;publish();}
+  }
+  async function bindTerminalActivity(values){
+    if(!Array.isArray(values)||values.length!==1)throw Error('Drag one terminal row at a time to link its status badge.');
+    const uri=terminalUri(vscode,values[0]);
+    if(!vscode.window.registerFileDecorationProvider)throw Error('This VS Code host does not support terminal decorations.');
+    const link=await sessionsApi();if(!link)throw Error('Enable Agent Glue Sessions to identify the terminal.');
+    await link.refresh();const sessions=await core.sessions();
+    const choices=vscode.window.terminals.flatMap(terminal=>{
+      const source=core.sessionForTerminal(terminal,sessions,link.sessionForTerminal(terminal));
+      return source?[{label:terminal.name,description:source.profile+' · '+source.cwd,detail:source.sessionName,terminal,source}]:[];
+    });
+    const choice=await vscode.window.showQuickPick(choices,{title:'Which terminal row did you drag?',placeHolder:'Confirm the source tab. VS Code supplies its resource ID without its name.'});
+    if(!choice)return;
+    if(link.sessionForTerminal(choice.terminal)!==choice.source.sessionName)throw Error('The terminal changed. Drop it again.');
+    terminalActivity??=new TerminalActivity(vscode,context);
+    terminalActivity.bind(uri,choice.terminal,choice.source);
+    status='Native terminal badge linked. Repeat for other tabs; links last until this window reloads.';
+    await refresh();
   }
   async function forkConversation(target){
     if(forkBusy)return;
@@ -205,7 +225,7 @@ function activate(context){
   const save=async()=>{await context.workspaceState.update('files',files);await context.workspaceState.update('draft',draft);await context.workspaceState.update('selected',selected);};
   const state=()=>({statusRunBusy,statusRunSessionId,webApps:apps.items.filter(item=>item.sessionId===selected).map(item=>({...item,label:appLabel(item.url)})),webAppsActiveTotal:apps.items.filter(item=>item.running).length,sessions:sessionList,selectedSessionId:selected,filesMessage:byId(selected)?`No existing files found in the recent terminal output for ${byId(selected).name}.`:'No matching agent session for the selected terminal. Select an attached agent terminal or use Choose Session in the view menu.',resourceTab,prFilter,prSort,prReadFilter,resourceItems:visibleResources(),resourceStatus,resourceGeneration,resourceFolder:resourceRoot||byId(selected)?.cwd||'',files:(files[selected]||[]).filter(f=>!f.hidden&&!f.missing),draft,status:status||connectionStatus});
   const post=(view,message)=>{try{void Promise.resolve(view.postMessage(message)).catch(()=>views.delete(view));}catch{views.delete(view);}};
-  const publish=()=>{if(sidebar)sidebar.title=byId(selected)?'AG - '+byId(selected).profile:'AG';for(const view of views)post(view,{type:'state',state:state()});};
+  const publish=()=>{terminalActivity?.update(sessionList,{...statusReports,...activityReports},selected,Boolean(sidebar?.visible),api);if(sidebar)sidebar.title=byId(selected)?'AG - '+byId(selected).profile:'AG';for(const view of views)post(view,{type:'state',state:state()});};
   function loadResources(force=false){
     const cwd=byId(selected)?.cwd;
     const key=resourceTab+':'+prFilter+':'+(cwd||'')+(resourceTab==='tasks'?':'+selected:'');
@@ -222,7 +242,7 @@ function activate(context){
     void resources.list(resourceTab,cwd,{filter:prFilter,session:byId(selected)}).then(result=>{
       if(generation!==resourceGeneration)return;
       resourceRoot=result.root;
-      if(resourceTab==='tasks'){const {combine,visible}=require('./status-runner.cjs');const combined=combine(statusReports[selected],result.items);result={...result,items:visible(combined)};}
+      if(resourceTab==='tasks'){const {combine,visible}=require('./status-runner.cjs');const combined=combine(statusReports[selected],result.items);activityReports[selected]={items:combined};result={...result,items:visible(combined)};}
       resourceItems=result.items.map(item=>({...item,newComments:item.commentAt&&item.commentAt>(prSeen[item.id]||new Date(Date.now()-7*86400000).toISOString())}));
       if(resourceTab==='prs')resourceItems=resources.sortItems(resourceItems,prSort);
       resourceStatus=result.warning||'';publish();
@@ -254,6 +274,7 @@ function activate(context){
       if(session&&sidebar?.visible&&!cleared.has(selected)){
         const {stdout}=await core.run('tmux',['capture-pane','-p','-J','-t',session.pane,'-S','-2000'],{maxBuffer:1024*1024});
         if(vscode.window.activeTerminal!==activeTerminal){refreshAgain=true;return;}
+        terminalActivity?.observe(session.id,stdout);
         apps.observe(session,stdout);
         const existing=await core.discoverReferences(stdout,session.cwd,{projectRoot:core.project});
         if(vscode.window.activeTerminal!==activeTerminal){refreshAgain=true;return;}
@@ -428,6 +449,7 @@ function activate(context){
       case 'clearFiles':
         if(selected){files[selected]=(files[selected]||[]).filter(file=>file.pinned);cleared.add(selected);}
         break;
+      case 'bindTerminalActivity':await bindTerminalActivity(message.uris);break;
       case 'pinFile':await vscode.commands.executeCommand('agentGlue.pin');break;
       case 'selectSession':{
         if(!byId(message.id))throw new Error('Session is no longer available.');
@@ -543,7 +565,7 @@ function activate(context){
   });
   command('agentGlue.draft',openDraft);command('agentGlue.layout',layout);
   context.subscriptions.push(vscode.window.onDidChangeActiveTerminal(()=>{if(sidebar?.visible)void refresh();}));
-  const interval=setInterval(()=>{for(const [view,batch] of uploadBatches)if(Date.now()-batch.lastActivity>120000)uploadBatches.delete(view);void uploads.expire();if(sidebar?.visible||appsPanel?.visible)void refresh();},3000);
+  const interval=setInterval(()=>{for(const [view,batch] of uploadBatches)if(Date.now()-batch.lastActivity>120000)uploadBatches.delete(view);void uploads.expire();if(terminalActivity)publish();if(sidebar?.visible||appsPanel?.visible)void refresh();},3000);
   context.subscriptions.push({dispose(){clearInterval(interval);void uploads.close();for(const panel of panels.values())panel.dispose();draftPanel?.dispose();appsPanel?.dispose();}});
   // Reveal the companion on startup without taking keyboard focus from the editor or terminal.
   void vscode.commands.executeCommand('agentGlue.companion.focus',{preserveFocus:true}).catch(error=>{

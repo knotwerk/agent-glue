@@ -115,6 +115,8 @@ test('browser: screenshot drops upload and Clear text preserves recipient and at
     return route.abort();
   });
   await page.goto('https://agent-glue.test/');
+  await page.evaluate(()=>{const transfer=new DataTransfer();transfer.setData('Terminals',JSON.stringify(['vscode-terminal:/fixture/9']));document.dispatchEvent(new DragEvent('drop',{dataTransfer:transfer,bubbles:true,cancelable:true}));});
+  assert.ok(await page.evaluate(()=>window.sent.some(m=>m.type==='bindTerminalActivity'&&m.uris[0]==='vscode-terminal:/fixture/9')));
   await page.evaluate(()=>window.dispatchEvent(new MessageEvent('message',{data:{type:'state',state:{sessions:[{id:'one',name:'One'}],selectedSessionId:'one',files:[{id:'file',path:'/synthetic/plan.md',label:'plan.md',pinned:true,description:'<img src=x onerror=alert(1)> Review notes'}],draft:{id:'draft',text:'Keep attachments',targetId:'one',targetName:'One',attachments:[{name:'existing.png',path:'/synthetic/existing.png',size:4}]}}}})));
   assert.equal(await page.locator('.file-description').textContent(),'<img src=x onerror=alert(1)> Review notes');
   assert.equal(await page.locator('.file-description img').count(),0);

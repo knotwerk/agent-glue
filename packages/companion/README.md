@@ -197,3 +197,27 @@ Optional `files` and `agents` are lists of short strings; `tokens` is an exact
 per-request integer count, omitted when unavailable. Never estimate token usage
 or substitute a whole-session total. Use atomic writes, at most 16 KiB per record
 and 200 records per project. No conversation histories or agent memory are indexed.
+
+## Native terminal status badges
+
+Drag **one row from VS Code's terminal sidebar** onto Agent Glue and confirm
+which terminal you dragged. This binds the native tab's resource ID to that
+terminal object and tmux identity. Repeat for other tabs. Links are deliberately
+not saved across window reloads, because VS Code can reuse tab IDs. Cancelling
+creates no link; closed terminals lose their decorations. No tab is renamed,
+focused, replaced or restarted by badge updates.
+
+The native row receives an amber working badge, green completion check, red
+waiting/blocked mark, or grey unknown mark. Working badges show elapsed minutes
+since continuous observation began; details include reported helper counts.
+Existing VS Code warnings can coexist with these decorations. This uses the
+FileDecorationProvider API and the terminal row's resource decoration support;
+there is no activity strip above Files.
+
+Explicit working and permission UI is observed only in the selected pane while
+Agent Glue is visible. Completion comes from saved task reports, not silence.
+Background rows show last observations or saved reports; after five minutes
+without fresh evidence they turn grey. Ordinary polling uses no AI tokens.
+This is not a live monitor of unselected panes. Use Terminal Status to refresh
+saved reports. The native UI limits badges to two characters; full elapsed time
+and helper details are supplied in the decoration tooltip where VS Code shows it.

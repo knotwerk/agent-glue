@@ -81,6 +81,11 @@ on macOS, dictation and clipboard images.
   Review hosted PRs or prepared local changes. Keep stable ordering, mark items
   read, and leave local feedback for your AI before anything is pushed. Prepared
   local reviews do not require a published GitHub PR.
+- **Status beside native terminal names.** Drag a terminal row onto Agent Glue
+  and confirm which terminal it is to link a native status badge. Amber means
+  working, green reported done, red waiting/blocked, and grey unknown or stale.
+  Working badges show compact elapsed minutes. Link each terminal once per
+  window load; existing names, processes and tmux sessions stay intact.
 - **See what this terminal is doing.** The sidebar title follows the selected CLI,
   such as `AG - claude2` or `AG - codexl`. **Terminal Status** (pulse icon) shows
   all unfinished tasks plus the three latest completions. Compact rows show

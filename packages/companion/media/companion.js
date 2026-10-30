@@ -610,6 +610,8 @@
     event.stopPropagation();
     dropZone.classList.remove('drag-over');
     const transfer = event.dataTransfer;
+    const terminalData=transfer?.getData('Terminals');
+    if(terminalData){try{const uris=JSON.parse(terminalData);if(!Array.isArray(uris)||uris.length!==1)throw Error();send({type:'bindTerminalActivity',uris});}catch{showError('Drag one terminal row at a time to link its status badge.');}return;}
     let files = [...(transfer?.files || [])];
     if (!files.length) files = [...(transfer?.items || [])].filter(item => item.kind === 'file').map(item => item.getAsFile()).filter(Boolean);
     if (files.length) enqueueFiles(files);

@@ -1040,3 +1040,23 @@ test('sidebar title follows the exact CLI profile and activity never captures ba
  env.vscode.window.activeTerminal=second;env.log.activeTerminalChanged(second);await settle(view);assert.equal(view.title,'AG - codexl');
  env.vscode.window.activeTerminal={name:'Unrelated shell'};env.log.activeTerminalChanged(env.vscode.window.activeTerminal);await settle(view);assert.equal(view.title,'AG');
 });
+
+test('native terminal badge binding uses the chosen terminal without renaming or restarting it',async t=>{
+ const chosen={name:'Fix bug'};let provider;
+ const link={refresh:async()=>{},sessionForTerminal:terminal=>terminal===chosen?'claude-main':undefined};
+ const env=await start(t,{capture:'Recent output\n• Working (2s • esc to interrupt)',sessionsApi:link});
+ env.vscode.window.terminals=[chosen];env.vscode.window.activeTerminal=chosen;
+ env.vscode.EventEmitter=class{constructor(){this.event=()=>({dispose(){}});}fire(){}dispose(){}};
+ env.vscode.ThemeColor=class{constructor(id){this.id=id;}};
+ env.vscode.window.registerFileDecorationProvider=value=>{provider=value;return {dispose(){}};};
+ env.vscode.Uri.parse=function parse(value){const u=new URL(value);return {scheme:u.protocol.slice(0,-1),authority:u.host,path:u.pathname,query:u.search.slice(1),fragment:u.hash.slice(1),with(changes){const next=new URL(value);if(changes.fragment!==undefined)next.hash=changes.fragment;if(changes.query!==undefined)next.search=changes.query;return parse(next.href);},toString(){return value;}};};
+ const view=await openSidebar(env);await settle(view);
+ env.vscode.window.showQuickPick=async items=>items[0];
+ await view.send({type:'bindTerminalActivity',uris:['vscode-terminal:/fixture/9']});
+ assert.ok(provider);assert.equal(provider.provideFileDecoration(env.vscode.Uri.parse('vscode-terminal:/fixture/9')).color.id,'terminal.ansiYellow');
+ assert.equal(chosen.name,'Fix bug');assert.ok(!env.log.executed.some(([command])=>/rename|relaunch|kill/i.test(command)));
+ assert.doesNotMatch(view.webview.html,/activity-strip/);
+ const count=provider.bindings.size;env.vscode.window.showQuickPick=async()=>undefined;
+ await view.send({type:'bindTerminalActivity',uris:['vscode-terminal:/fixture/10']});assert.equal(provider.bindings.size,count);
+ await view.send({type:'bindTerminalActivity',uris:['file:///example']});assert.equal(provider.bindings.size,count);
+});

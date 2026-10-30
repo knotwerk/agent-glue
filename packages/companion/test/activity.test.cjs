@@ -30,3 +30,8 @@ test('current permission prompt overrides an older completed task without trusti
  const activity=new Activity();activity.observe('one','Do you want to proceed?\n1. Yes\n2. No',now+1000);
  const row=activity.list(sessions,{one:{items:[item('done')]}},{selected:'one',visible:true,now:now+1000})[0];assert.equal(row.status,'blocked');assert.equal(row.label,'Waiting for you');
 });
+
+test('activity inspects actual terminal lines and strips ANSI controls',()=>{
+ assert.equal(signal('Some previous output\n\u001b[33m• Working (4s • esc to interrupt)\u001b[0m\n'), 'active');
+ assert.equal(signal('Do you want to proceed?\n1. Yes\n'+Array(20).fill('new output').join('\n')),undefined);
+});
