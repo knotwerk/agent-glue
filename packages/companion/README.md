@@ -202,8 +202,10 @@ and 200 records per project. No conversation histories or agent memory are index
 
 The **Terminals** selector displays local lifecycle events from Claude and Codex:
 consistent RAG dots (their colours stay visible when selected): amber for working, red for permission/input requested, green
-for a finished turn, and grey for idle or unknown. Rows include plain-English status
-and elapsed/update age. Hidden VS Code tool terminals are
+for a finished turn, and grey for idle or unknown. Rows show only the dot and timing;
+hover for status details. Working time starts at a recorded prompt and is omitted
+when that start event is missing; tool events do not reset it. Other timestamps
+show time since the recorded update. Hidden VS Code tool terminals are
 excluded from the list.
 Green means the agent finished responding, not that all project work is complete.
 A permission indicator clears on the next recorded tool/prompt/completion event;
@@ -215,16 +217,24 @@ Run **Agent Glue: Enable Live Terminal Status** once to install observer hooks i
 existing standard account directories (`.claude`, `.claude2`, `.claudel`,
 `.claudelp`, `.codex`, `.codex2`, `.codex3`, `.codexl`). Existing settings/hooks
 are preserved and backed up privately. Custom config-directory mappings require
-manual setup. Codex requires review/trust through `/hooks`; Agent Glue never
-bypasses hook trust. Existing CLI sessions may need to reload their hook
+manual setup. In **each Codex account**, review and enable all eight Agent Glue
+entries in `/hooks` (their commands contain `--agent-glue-hook`). Approval of a
+different hook does not approve these observers. Agent Glue never bypasses hook
+trust. Existing CLI sessions may need to reload their hook
 configuration. No terminal is restarted automatically.
 
 The observer only stores event names, timestamps, session IDs and tmux identity
 under Companion's global storage. It discards prompt text, tool payloads and
-transcript paths and does not read CLI history. Each pane has fixed event slots:
-atomic writes retain the latest event of each type, not an append-only history.
-Current status is derived from those slots; earlier events of the same type are
-replaced. This is a status cache, not a durable audit log.
+transcript paths and does not read CLI history. Each pane has an append-only
+`events.jsonl` journal and a replaceable `state.json` cache. Hooks flush each event
+to disk before updating the older event slots. While the view is visible, the
+reader applies new log entries and saves a checkpoint; a missing or damaged cache
+can be rebuilt. Replay is bounded per refresh, tolerates a partial final record,
+and never truncates the journal. Older event slots remain readable, so updating
+the observer preserves existing status and does not restart CLI/tmux sessions.
+Logs are local metadata only, retained without automatic deletion. A separate
+`diagnostics.jsonl` records fixed failure codes, never exception text or payloads.
+Logging cannot recover an event that an untrusted or unloaded hook never sent.
 Background status works while Terminals is visible, using a three-second local
 metadata refresh. Missing hooks show unknown; subagent events are not used to
 invent a live helper count. No status update makes an AI call.

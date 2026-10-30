@@ -83,12 +83,15 @@ on macOS, dictation and clipboard images.
   local reviews do not require a published GitHub PR.
 - **Live status beside terminal names.** Enable the **Terminals** selector to
   replace the native tab list. Hook events show amber working, red permission/input
-  requested, green turn finished, and grey idle/unknown; working rows show minutes.
+  requested, green turn finished, and grey idle/unknown. Rows keep just the dot and
+  timing; hover for details. Working timers require a recorded start event.
   **Enable Live Terminal Status** installs local observer hooks for existing standard
-  Claude/Codex account directories. Codex requires `/hooks` trust review; existing
+  Claude/Codex account directories. Review all eight Agent Glue hooks through
+  `/hooks` in each Codex account; existing
   CLI sessions may need to reload their hook configuration. No agents are restarted.
   Missing events and working/waiting updates older than 15 minutes show unknown. Confirmed finished turns keep their timestamped completion state. This uses no AI calls
-  or conversation-history indexing. Moving the selector back restores the previous
+  or conversation-history indexing. An append-only local event log supports
+  recovery of the status cache without restarting sessions. Moving the selector back restores the previous
   native-tabs setting.
 - **See what this terminal is doing.** The sidebar title follows the selected CLI,
   such as `AG - claude2` or `AG - codexl`. **Terminal Status** (pulse icon) shows

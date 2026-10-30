@@ -14,7 +14,7 @@ function host(){
 }
 test('selector identifies duplicate names by terminal identity and never focuses a closed tab',()=>{
  const h=host(),p=h.selector.provider;assert.notEqual(p.getTreeItem(h.a).id,p.getTreeItem(h.b).id);
- assert.equal(p.getTreeItem(h.a).description,'No status · Tab 1');assert.match(p.getTreeItem(h.a).iconPath.dark.fsPath,/status-grey-dark.svg$/);assert.match(p.getTreeItem(h.b).iconPath.dark.fsPath,/status-grey-dark.svg$/);assert.match(p.getTreeItem(h.a).tooltip,/No lifecycle events/);
+ assert.equal(p.getTreeItem(h.a).description,'Tab 1');assert.match(p.getTreeItem(h.a).iconPath.dark.fsPath,/status-grey-dark.svg$/);assert.match(p.getTreeItem(h.b).iconPath.dark.fsPath,/status-grey-dark.svg$/);assert.match(p.getTreeItem(h.a).tooltip,/No lifecycle events/);
  const item=p.getTreeItem(h.b);h.commands.get(item.command.command)(...item.command.arguments);assert.deepEqual(h.shown,[['b',false]]);
  h.vscode.window.terminals=[h.a];h.commands.get(item.command.command)(...item.command.arguments);assert.equal(h.shown.length,1);
 });
@@ -63,16 +63,18 @@ test('live status colors reflect the mapped session and native tabs setting is r
  const live=registerSelector(h.vscode,h.context,t=>t===h.a?'a':'b',name=>({status:name==='a'?'active':'blocked',label:name==='a'?'Working':'Waiting for you',since:Date.now()-61000}));
  await new Promise(resolve=>setImmediate(resolve));assert.equal(configured,false);
  assert.match(live.provider.getTreeItem(h.a).iconPath.dark.fsPath,/status-amber-dark.svg$/);assert.match(live.provider.getTreeItem(h.b).iconPath.dark.fsPath,/status-red-dark.svg$/);
- assert.match(live.provider.getTreeItem(h.a).description,/1m/);
+ assert.match(live.provider.getTreeItem(h.a).tooltip,/1m/);
  await h.commands.get('agentGlue.resetTerminalSelector')();assert.equal(configured,true);
 });
 
-test('RAG rows have explicit text and hidden tool terminals stay out of the selector',()=>{
+test('RAG rows show dots and timing without status words, and hidden terminals stay out',()=>{
  const h=host();h.vscode.window.terminals.push({name:'Thinking',creationOptions:{hideFromUser:true}});
  const list=registerSelector(h.vscode,h.context,t=>t===h.a?'a':'b',name=>({status:name==='a'?'active':'done',label:'Reported',since:Date.now()-61000,at:Date.now()-5000}));
  assert.deepEqual(list.provider.getChildren(),[h.a,h.b]);
- assert.match(list.provider.getTreeItem(h.a).description,/Working · 1m/);
- assert.match(list.provider.getTreeItem(h.b).description,/Finished · 5s ago/);
+ assert.equal(list.provider.getTreeItem(h.a).description,'1m · Tab 1');
+ assert.match(list.provider.getTreeItem(h.a).tooltip,/Reported · 1m/);
+ assert.equal(list.provider.getTreeItem(h.b).description,'5s ago · Tab 2');
+ assert.match(list.provider.getTreeItem(h.b).tooltip,/Reported · 5s ago/);
  assert.match(list.provider.getTreeItem(h.a).iconPath.light.fsPath,/status-amber-light.svg$/);
  assert.match(list.provider.getTreeItem(h.b).iconPath.dark.fsPath,/status-green-dark.svg$/);
 });

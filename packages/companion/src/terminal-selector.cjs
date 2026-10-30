@@ -34,12 +34,11 @@ function registerSelector(vscode,context,sessionForTerminal=()=>undefined,status
    const same=listed().filter(t=>t.name===terminal.name);
    const state=status(terminal),now=Date.now();
    const age=at=>{const seconds=Math.max(0,Math.floor((now-at)/1000));return seconds<60?seconds+'s':Math.floor(seconds/60)+'m';};
-   const label=state?({active:'Working',blocked:'Needs input',done:'Finished',idle:'Idle',unknown:state.at?'Status stale':'No status'})[state.status]:'';
-   const elapsed=state?.status==='active'&&state.since?age(state.since):state?.at?age(state.at)+' ago':'';
-   const description=[label,elapsed,editor?'Editor':'',same.length>1?'Tab '+(same.indexOf(terminal)+1):''].filter(Boolean).join(' · ');
+   const elapsed=state?.status==='active'?(state.since?age(state.since):''):state?.at?age(state.at)+' ago':'';
+   const description=[elapsed,editor?'Editor':'',same.length>1?'Tab '+(same.indexOf(terminal)+1):''].filter(Boolean).join(' · ');
    return {id:ids.get(terminal),label:terminal.name,description:description||undefined,contextValue:sessionForTerminal(terminal)?'agentGlueAgentTerminal':'agentGlueTerminal',
     iconPath:state?statusIcon(state):new vscode.ThemeIcon('terminal'),
-    tooltip:terminal.name+' — '+(selected?'selected terminal':'click to focus')+'\n'+(sessionForTerminal(terminal)||'Shell terminal')+'\n'+(state?state.label+(state.at?' · '+new Date(state.at).toLocaleTimeString():''):'Shell terminal'),
+    tooltip:terminal.name+' — '+(selected?'selected terminal':'click to focus')+'\n'+(sessionForTerminal(terminal)||'Shell terminal')+'\n'+(state?state.label+(elapsed?' · '+elapsed:'')+(state.at?' · '+new Date(state.at).toLocaleTimeString():''):'Shell terminal'),
     command:{command:'agentGlue.focusSelectorTerminal',title:'Focus terminal',arguments:[terminal]}};
   },getParent:()=>undefined};
  const dragAndDropController={dragMimeTypes:[mime],dropMimeTypes:[mime],
