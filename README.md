@@ -99,7 +99,9 @@ on macOS, dictation and clipboard images.
   This avoids attributing a shared server's activity to the wrong terminal.
   Status events received before linking are retained without conversation content,
   so linking can immediately recover the latest state and recorded turn start.
-  Missing events and working/waiting updates older than 15 minutes show unknown. Confirmed finished turns keep their timestamped completion state. This uses no AI calls
+  Missing events and ordinary working/waiting updates older than 15 minutes show unknown.
+  Explicitly reported unfinished background work stays amber; hover shows when an
+  old report last updated. Confirmed finished turns keep their timestamped completion state. This uses no AI calls
   or conversation-history indexing. An append-only local event log supports
   recovery of the status cache without restarting sessions. Moving the selector back restores the previous
   native-tabs setting.

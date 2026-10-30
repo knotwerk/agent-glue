@@ -181,9 +181,22 @@ test('Claude Stop remains amber while its reported background work is running, a
  assert.equal(stop.background,1);assert.doesNotMatch(JSON.stringify(stop),/private|secret|command|cron/);
  const events=[record('UserPromptSubmit',1000),stop];
  const state=summarize(events,session,3000);assert.equal(state.status,'active');assert.equal(state.since,1000);assert.match(state.label,/Background work/);
- assert.equal(summarize(events,session,1000000).status,'unknown','an old background snapshot must not look live forever');
+ const quiet=summarize(events,session,1000000);assert.equal(quiet.status,'active','explicit unfinished background work must not expire during a long task');
+ assert.match(quiet.label,/last reported \(1\); no update for 16 min/);assert.equal(quiet.at,2000);assert.equal(quiet.since,1000);
  events.push(eventRecord({hook_event_name:'SubagentStop',session_id:'chat',agent_id:'child',background_tasks:[],last_assistant_message:'private'},identity,4000));
  assert.equal(summarize(events,session,5000).status,'done');
+});
+
+test('quiet background work stays amber across reload, and later completion or interruption clears it',async()=>{
+ const {tempDir}=require('../../../test/support/tmp.cjs');const base=tempDir('quiet-background'),now=Date.now(),started=now-40*60*1000;
+ await writeEvent(base,record('UserPromptSubmit',started));await writeEvent(base,{...record('Stop',started+1000),background:7});
+ const first=new Lifecycle(base);await first.refresh([session]);assert.equal(first.get(session.sessionName).status,'active');assert.match(first.get(session.sessionName).label,/last reported \(7\)/);
+ const second=new Lifecycle(base);await second.refresh([session]);assert.equal(second.get(session.sessionName).status,'active');assert.equal(second.get(session.sessionName).since,started);
+ await writeEvent(base,{...record('Stop',now-1000),event:'SubagentStop',background:0});await second.refresh([session]);assert.equal(second.get(session.sessionName).status,'done');
+ for(const event of ['Interrupt','SessionEnd']){
+  const state=summarize([record('UserPromptSubmit',started),{...record('Stop',started+1000),background:7},record(event,now)],session,now+1);
+  assert.equal(state.status,event==='Interrupt'?'idle':'unknown');
+ }
 });
 
 test('a child finishing cannot turn an active or blocked parent green',()=>{

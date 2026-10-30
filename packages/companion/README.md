@@ -217,7 +217,11 @@ for two seconds to mark that completion read; right-click **Mark Unread** to res
 the ring. Read marks survive reloads, and the next completed turn gets a new ring.
 A permission indicator clears on the next recorded tool/prompt/completion event;
 it can remain red while an approved long-running tool finishes. A working/waiting event older
-than 15 minutes becomes unknown. A confirmed finished turn stays green with its
+than 15 minutes becomes unknown, except for explicitly reported unfinished background
+work: it stays amber until a later event updates it. Hover over an old background
+report to see how many minutes have passed without an update. This preserves the
+last reported work, not a guarantee that every background process is still alive.
+A confirmed finished turn stays green with its
 update age until another event arrives; idle remains idle.
 
 Run **Agent Glue: Enable Live Terminal Status** once to install observer hooks in

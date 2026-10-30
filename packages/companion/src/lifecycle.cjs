@@ -47,11 +47,16 @@ function summarize(events,session,now=Date.now()){
  if(!main)return {status:'unknown',label:'Background update received; waiting for the main agent status',at:latest.at};
  const background=main.event==='Stop'?(latest.event==='SubagentStop'?latest.background:main.background):undefined;
  let status=({SessionStart:'idle',UserPromptSubmit:'active',PreToolUse:'active',PostToolUse:'active',PermissionRequest:'blocked',Notification:'blocked',Stop:background>0?'active':'done',Interrupt:'idle',SessionEnd:'unknown'})[main.event];
- if(now-latest.at>15*60*1000&&['active','blocked'].includes(status))return {status:'unknown',label:'No recent update; last working/waiting event over 15 minutes ago',at:latest.at};
+ const stale=now-latest.at>15*60*1000;
+ // A stopped foreground reply can leave explicit unfinished background work.
+ // Silence during a long task is not an event that clears that work. Preserve
+ // amber, but make the age of this report clear rather than claiming a heartbeat.
+ if(stale&&['active','blocked'].includes(status)&&!(background>0))return {status:'unknown',label:'No recent update; last working/waiting event over 15 minutes ago',at:latest.at};
  const prompt=current.find(e=>e.event==='UserPromptSubmit'&&e.at<=latest.at);
  const ended=current.filter(e=>(['Interrupt','SessionEnd'].includes(e.event)||(e.event==='Stop'&&!(e.background>0)))&&e.at<latest.at).at(-1);
  const since=prompt&&(!ended||prompt.at>ended.at)?prompt.at:undefined;
- return {status,label:background>0?'Background work continues ('+background+')':({active:'Working',blocked:'Waiting for you',done:'Turn finished',idle:'Idle',unknown:'Session ended'})[status],at:latest.at,since,event:latest.event};
+ const backgroundLabel=stale?'Background work last reported ('+background+'); no update for '+Math.floor((now-latest.at)/60000)+' min':'Background work continues ('+background+')';
+ return {status,label:background>0?backgroundLabel:({active:'Working',blocked:'Waiting for you',done:'Turn finished',idle:'Idle',unknown:'Session ended'})[status],at:latest.at,since,event:latest.event};
 }
 class Lifecycle{
  constructor(base=root()){this.base=base;this.rows=new Map();this.checkpoints=new Map();this.threadCheckpoints=new Map();}
