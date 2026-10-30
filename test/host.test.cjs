@@ -35,6 +35,7 @@ function fakeHost({ trusted = true, sessionsApi, globalSettings = {} } = {}) {
   });
   const vscode = {
     EventEmitter: class { event=()=>({dispose(){}}); fire(){} dispose(){} },
+    ThemeColor: class { constructor(id){this.id=id;} },
     ThemeIcon: class { constructor(id){this.id=id;} },
     ViewColumn: { Beside: -2, One: 1, Active: -1 },
     ConfigurationTarget: { Global: 1 },

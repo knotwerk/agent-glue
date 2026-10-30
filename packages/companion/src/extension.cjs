@@ -30,7 +30,8 @@ function activate(context){
   let dictationRequest,followTarget=false,clipboardBusy=false,manualSelection;
   const uploadBatches=new Map();
   const uploadBusy=()=>clipboardBusy||uploadBatches.size||uploads.pending.size||uploads.active.size;
-  const terminalSelector=vscode.window.createTreeView?require('./terminal-selector.cjs').registerSelector(vscode,context,terminal=>api?.sessionForTerminal(terminal)):undefined;
+  const lifecycle=vscode.window.createTreeView?new (require('./lifecycle.cjs').Lifecycle)(path.join(context.globalStorageUri.fsPath,'lifecycle')):undefined;
+  const terminalSelector=vscode.window.createTreeView?require('./terminal-selector.cjs').registerSelector(vscode,context,terminal=>api?.sessionForTerminal(terminal),name=>lifecycle.get(name)):undefined;
   let resourceTab='files',prFilter=context.workspaceState.get('prFilter','all'),resourceItems=[],resourceStatus='',resourceKey='',resourceRoot,resourceGeneration=0,resourceLoadedAt=0;
   let prSort=context.workspaceState.get('prSort','title'),prReadFilter=context.workspaceState.get('prReadFilter','all');
   const prRead=context.workspaceState.get('prRead',{});
@@ -570,7 +571,16 @@ function activate(context){
   });
   command('agentGlue.draft',openDraft);command('agentGlue.layout',layout);
   context.subscriptions.push(vscode.window.onDidChangeActiveTerminal(()=>{if(sidebar?.visible)void refresh();}));
-  const interval=setInterval(()=>{for(const [view,batch] of uploadBatches)if(Date.now()-batch.lastActivity>120000)uploadBatches.delete(view);void uploads.expire();if(terminalActivity)publish();if(sidebar?.visible||appsPanel?.visible)void refresh();},3000);
+  let lifecyclePending=false;
+  async function refreshLifecycle(){
+    if(lifecyclePending||!terminalSelector?.visible)return;
+    lifecyclePending=true;try{await sessionsApi();const sessions=await core.sessions();await lifecycle.refresh(sessions);terminalSelector.refresh();}catch{}finally{lifecyclePending=false;}
+  }
+  command('agentGlue.enableLiveStatus',async()=>{
+    const results=await require('./lifecycle.cjs').install({source:path.join(context.extensionPath,'dist/lifecycle-hook.cjs'),base:lifecycle.base});
+    await vscode.window.showInformationMessage(results.join('; ')+'. Codex requires /hooks trust review. Existing CLI sessions may need to reload their hooks; no agents were restarted.');
+  });
+  const interval=setInterval(()=>{for(const [view,batch] of uploadBatches)if(Date.now()-batch.lastActivity>120000)uploadBatches.delete(view);void uploads.expire();if(terminalActivity)publish();void refreshLifecycle();if(sidebar?.visible||appsPanel?.visible)void refresh();},3000);
   context.subscriptions.push({dispose(){clearInterval(interval);void uploads.close();for(const panel of panels.values())panel.dispose();draftPanel?.dispose();appsPanel?.dispose();}});
   // Reveal the companion on startup without taking keyboard focus from the editor or terminal.
   void vscode.commands.executeCommand('agentGlue.companion.focus',{preserveFocus:true}).catch(error=>{

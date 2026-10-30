@@ -1,6 +1,6 @@
 'use strict';
 // Native terminal controls; lifecycle status is deliberately not inferred here.
-function registerSelector(vscode,context,sessionForTerminal=()=>undefined){
+function registerSelector(vscode,context,sessionForTerminal=()=>undefined,statusForSession=()=>({status:'unknown',label:'No lifecycle events yet'})){
  if(!vscode.window.createTreeView)return;
  const changed=new vscode.EventEmitter(),ids=new WeakMap();let nextId=0;
  const mime='application/vnd.code.tree.agentglue.terminalselector';
@@ -22,16 +22,18 @@ function registerSelector(vscode,context,sessionForTerminal=()=>undefined){
   else ordered=ordered.filter(isOpen).concat(terminals.filter(t=>!ordered.includes(t)));
   return ordered;
  };
+ const status=terminal=>sessionForTerminal(terminal)?statusForSession(sessionForTerminal(terminal)):undefined;
  const provider={onDidChangeTreeData:changed.event,getChildren:children,
   getTreeItem(terminal){
    if(!ids.has(terminal))ids.set(terminal,String(++nextId));
    const selected=terminal===vscode.window.activeTerminal,location=terminal.creationOptions?.location;
    const editor=location===2||Boolean(location&&typeof location==='object'&&'viewColumn' in location);
    const same=vscode.window.terminals.filter(t=>t.name===terminal.name);
-   const description=[editor?'Editor':'',same.length>1?'Tab '+(same.indexOf(terminal)+1):''].filter(Boolean).join(' · ');
+   const state=status(terminal),elapsed=state?.status==='active'?Math.max(0,Math.floor((Date.now()-state.since)/60000))+'m':'';
+   const description=[elapsed,editor?'Editor':'',same.length>1?'Tab '+(same.indexOf(terminal)+1):''].filter(Boolean).join(' · ');
    return {id:ids.get(terminal),label:terminal.name,description:description||undefined,contextValue:sessionForTerminal(terminal)?'agentGlueAgentTerminal':'agentGlueTerminal',
-    iconPath:new vscode.ThemeIcon('terminal'),
-    tooltip:terminal.name+' — '+(selected?'selected terminal':'click to focus')+'\n'+(sessionForTerminal(terminal)||'Shell terminal')+'\nActivity status is not connected yet.',
+    iconPath:state?new vscode.ThemeIcon(({active:'sync~spin',blocked:'bell',done:'check',idle:'circle-outline',unknown:'question'})[state.status]||'question',new vscode.ThemeColor(({active:'terminal.ansiYellow',blocked:'terminal.ansiRed',done:'terminal.ansiGreen'})[state.status]||'descriptionForeground')):new vscode.ThemeIcon('terminal'),
+    tooltip:terminal.name+' — '+(selected?'selected terminal':'click to focus')+'\n'+(sessionForTerminal(terminal)||'Shell terminal')+'\n'+(state?state.label+(state.at?' · '+new Date(state.at).toLocaleTimeString():''):'Shell terminal'),
     command:{command:'agentGlue.focusSelectorTerminal',title:'Focus terminal',arguments:[terminal]}};
   },getParent:()=>undefined};
  const dragAndDropController={dragMimeTypes:[mime],dropMimeTypes:[mime],
@@ -45,7 +47,24 @@ function registerSelector(vscode,context,sessionForTerminal=()=>undefined){
   }};
  const tree=vscode.window.createTreeView('agentGlue.terminalSelector',{treeDataProvider:provider,showCollapseAll:false,dragAndDropController});
  let lastSignature;
- const refresh=()=>{const signature=vscode.window.terminals.map(t=>{if(!ids.has(t))ids.set(t,String(++nextId));return [ids.get(t),t.name,sessionForTerminal(t),t===vscode.window.activeTerminal].join('|');}).join('\n');if(signature===lastSignature)return;lastSignature=signature;changed.fire();const terminal=vscode.window.activeTerminal;if(tree.visible&&terminal)void Promise.resolve(tree.reveal(terminal,{select:true,focus:false})).catch(()=>{});};
+ const refresh=()=>{const signature=vscode.window.terminals.map(t=>{if(!ids.has(t))ids.set(t,String(++nextId));return [ids.get(t),t.name,sessionForTerminal(t),t===vscode.window.activeTerminal,JSON.stringify(status(t)),status(t)?.status==='active'?Math.floor(Date.now()/60000):''].join('|');}).join('\n');if(signature===lastSignature)return;lastSignature=signature;changed.fire();const terminal=vscode.window.activeTerminal;if(tree.visible&&terminal)void Promise.resolve(tree.reveal(terminal,{select:true,focus:false})).catch(()=>{});};
+ const settingKey='terminalSelector.nativeTabs';
+ let replaceNative=context.workspaceState?.get('terminalSelector.replaceNative',true)??true;
+ async function hideNative(){
+  if(!replaceNative||!vscode.workspace?.getConfiguration)return;
+  const config=vscode.workspace.getConfiguration('terminal.integrated'),info=config.inspect('tabs.enabled');
+  if(!context.workspaceState.get(settingKey))await context.workspaceState.update(settingKey,{target:info?.workspaceValue!==undefined?2:1,value:info?.workspaceValue??info?.globalValue});
+  const prior=context.workspaceState.get(settingKey);await config.update('tabs.enabled',false,prior.target);
+ }
+ async function restoreNative(){
+  const prior=context.workspaceState?.get(settingKey);if(!prior)return;
+  const config=vscode.workspace.getConfiguration('terminal.integrated');
+  const info=config.inspect('tabs.enabled'),current=prior.target===2?info.workspaceValue:info.globalValue;
+  if(current===false)await config.update('tabs.enabled',prior.value,prior.target);
+  await context.workspaceState.update(settingKey,undefined);
+ }
+ const hideSafely=()=>{if(tree.visible)void hideNative().catch(()=>{});};
+ hideSafely();
  context.subscriptions.push(changed,tree,
   vscode.commands.registerCommand('agentGlue.focusSelectorTerminal',terminal=>{if(isOpen(terminal))terminal.show(false);}),
   vscode.commands.registerCommand('agentGlue.splitSelectorTerminal',terminal=>{
@@ -54,19 +73,24 @@ function registerSelector(vscode,context,sessionForTerminal=()=>undefined){
    vscode.window.createTerminal({location:{parentTerminal:terminal},...(cwd?{cwd}:{})}).show(false);
   }),
   vscode.commands.registerCommand('agentGlue.tryTerminalSelector',async()=>{
+   replaceNative=true;await context.workspaceState?.update('terminalSelector.replaceNative',true);
    try{
     await vscode.commands.executeCommand('vscode.moveViews',{viewIds:['agentGlue.terminalSelector'],destinationId:'workbench.panel.terminal'});
     await vscode.commands.executeCommand('agentGlue.terminalSelector.focus');
+    await hideNative();
    }catch{
     await vscode.commands.executeCommand('agentGlue.terminalSelector.focus');
+    await hideNative();
     await vscode.window.showInformationMessage('Automatic placement is unavailable. Use the Terminals view menu → Move View → Terminal to try the layout.');
    }
   }),
   vscode.commands.registerCommand('agentGlue.resetTerminalSelector',async()=>{
+   replaceNative=false;await context.workspaceState?.update('terminalSelector.replaceNative',false);
    await vscode.commands.executeCommand('vscode.moveViews',{viewIds:['agentGlue.terminalSelector'],destinationId:'workbench.view.extension.agentGlueSelector'});
+   await restoreNative();
   }));
  for(const event of ['onDidOpenTerminal','onDidCloseTerminal','onDidChangeActiveTerminal','onDidChangeTerminalState'])if(vscode.window[event])context.subscriptions.push(vscode.window[event](refresh));
- context.subscriptions.push(tree.onDidChangeVisibility(refresh));
- return {provider,refresh,dragAndDropController};
+ context.subscriptions.push(tree.onDidChangeVisibility(()=>{refresh();hideSafely();}));
+ return {provider,refresh,dragAndDropController,get visible(){return tree.visible;}};
 }
 module.exports={registerSelector};

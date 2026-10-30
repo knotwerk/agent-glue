@@ -1,5 +1,5 @@
 {
-  "version": "0.1.68",
+  "version": "0.1.69",
   "activationEvents": [
     "onStartupFinished"
   ],
@@ -104,6 +104,11 @@
         "command": "agentGlue.splitSelectorTerminal",
         "title": "Split Terminal",
         "icon": "$(split-horizontal)"
+      },
+      {
+        "command": "agentGlue.enableLiveStatus",
+        "title": "Agent Glue: Enable Live Terminal Status",
+        "icon": "$(pulse)"
       }
     ],
     "viewsContainers": {
@@ -191,6 +196,11 @@
           "command": "agentGlue.resetTerminalSelector",
           "when": "view == agentGlue.terminalSelector",
           "group": "2_layout"
+        },
+        {
+          "command": "agentGlue.enableLiveStatus",
+          "when": "view == agentGlue.terminalSelector",
+          "group": "2_status"
         }
       ],
       "terminal/title/context": [

@@ -27,9 +27,9 @@ const packages = {
   },
   companion: {
     dir: path.join(root, 'packages/companion'),
-    required: ['LICENSE.txt', 'package.json', 'readme.md', 'dist/extension.cjs', 'dist/mermaid.js', 'dist/THIRD_PARTY_LICENSES.txt', 'dist/mac-dictation.vsix', 'media/companion.js', 'media/companion.css', 'media/icon.svg', ...materialMedia],
-    identical: ['LICENSE.txt', 'media/companion.js', 'media/companion.css', 'media/icon.svg', 'package.json', 'dist/extension.cjs', 'dist/mermaid.js', 'dist/mac-dictation.vsix', ...materialMedia],
-    allowed: [/^license\.txt$/i, /^package\.json$/, /^readme\.md$/i, /^dist\/(extension\.cjs|mermaid\.js|THIRD_PARTY_LICENSES\.txt|mac-dictation\.vsix)$/, /^media\/[a-z.-]+$/],
+    required: ['LICENSE.txt', 'package.json', 'readme.md', 'dist/extension.cjs', 'dist/lifecycle-hook.cjs', 'dist/mermaid.js', 'dist/THIRD_PARTY_LICENSES.txt', 'dist/mac-dictation.vsix', 'media/companion.js', 'media/companion.css', 'media/icon.svg', ...materialMedia],
+    identical: ['LICENSE.txt', 'media/companion.js', 'media/companion.css', 'media/icon.svg', 'package.json', 'dist/extension.cjs', 'dist/lifecycle-hook.cjs', 'dist/mermaid.js', 'dist/mac-dictation.vsix', ...materialMedia],
+    allowed: [/^license\.txt$/i, /^package\.json$/, /^readme\.md$/i, /^dist\/(extension\.cjs|lifecycle-hook\.cjs|mermaid\.js|THIRD_PARTY_LICENSES\.txt|mac-dictation\.vsix)$/, /^media\/[a-z.-]+$/],
   },
 };
 

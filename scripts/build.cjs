@@ -41,6 +41,7 @@ async function main() {
   const notices = require('./lib/licenses.cjs').notices(root, ['markdown-it', 'parse5', 'mermaid']);
   fs.writeFileSync(path.join(dist, 'THIRD_PARTY_LICENSES.txt'), notices);
 
+  fs.copyFileSync(path.join(companion,'src/lifecycle-hook.cjs'),path.join(dist,'lifecycle-hook.cjs'));
   verifyBundle(dist);
   console.log(`Built ${path.relative(root, dist)}/ (extension.cjs, mermaid.js, THIRD_PARTY_LICENSES.txt)`);
 }

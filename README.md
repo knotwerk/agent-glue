@@ -81,11 +81,15 @@ on macOS, dictation and clipboard images.
   Review hosted PRs or prepared local changes. Keep stable ordering, mark items
   read, and leave local feedback for your AI before anything is pushed. Prepared
   local reviews do not require a published GitHub PR.
-- **Status beside native terminal names.** Drag a terminal row onto Agent Glue
-  and confirm which terminal it is to link a native status badge. Amber means
-  working, green reported done, red waiting/blocked, and grey unknown or stale.
-  Working badges show compact elapsed minutes. Link each terminal once per
-  window load; existing names, processes and tmux sessions stay intact.
+- **Live status beside terminal names.** Enable the **Terminals** selector to
+  replace the native tab list. Hook events show amber working, red permission/input
+  requested, green turn finished, and grey idle/unknown; working rows show minutes.
+  **Enable Live Terminal Status** installs local observer hooks for existing standard
+  Claude/Codex account directories. Codex requires `/hooks` trust review; existing
+  CLI sessions may need to reload their hook configuration. No agents are restarted.
+  Missing events and events older than 15 minutes show unknown. This uses no AI calls
+  or conversation-history indexing. Moving the selector back restores the previous
+  native-tabs setting.
 - **See what this terminal is doing.** The sidebar title follows the selected CLI,
   such as `AG - claude2` or `AG - codexl`. **Terminal Status** (pulse icon) shows
   all unfinished tasks plus the three latest completions. Compact rows show

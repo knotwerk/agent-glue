@@ -7,3 +7,5 @@
 !dist/THIRD_PARTY_LICENSES.txt
 !dist/mac-dictation.vsix
 !LICENSE.txt
+
+!dist/lifecycle-hook.cjs

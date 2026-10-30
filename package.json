@@ -1,6 +1,6 @@
 {
   "name": "agent-glue",
-  "version": "0.1.68",
+  "version": "0.1.69",
   "private": true,
   "description": "Native agent terminals with document previews and remote attachments",
   "engines": {

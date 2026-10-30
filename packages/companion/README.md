@@ -198,29 +198,30 @@ per-request integer count, omitted when unavailable. Never estimate token usage
 or substitute a whole-session total. Use atomic writes, at most 16 KiB per record
 and 200 records per project. No conversation histories or agent memory are indexed.
 
-## Native terminal status badges
+## Live terminal status
 
-Drag **one row from VS Code's terminal sidebar** onto Agent Glue and confirm
-which terminal you dragged. This binds the native tab's resource ID to that
-terminal object and tmux identity. Repeat for other tabs. Links are deliberately
-not saved across window reloads, because VS Code can reuse tab IDs. Cancelling
-creates no link; closed terminals lose their decorations. No tab is renamed,
-focused, replaced or restarted by badge updates.
+The **Terminals** selector displays local lifecycle events from Claude and Codex:
+amber spinner for working, red bell for permission/input requested, green check
+for a finished turn, grey circle for idle, and grey question mark when unknown.
+Green means the agent finished responding, not that all project work is complete.
+A permission indicator clears on the next recorded tool/prompt/completion event;
+it can remain red while an approved long-running tool finishes. An event older
+than 15 minutes becomes unknown, even if the agent may still be working.
 
-The native row receives an amber working badge, green completion check, red
-waiting/blocked mark, or grey unknown mark. Working badges show elapsed minutes
-since continuous observation began; details include reported helper counts.
-Existing VS Code warnings can coexist with these decorations. This uses the
-FileDecorationProvider API and the terminal row's resource decoration support;
-there is no activity strip above Files.
+Run **Agent Glue: Enable Live Terminal Status** once to install observer hooks in
+existing standard account directories (`.claude`, `.claude2`, `.claudel`,
+`.claudelp`, `.codex`, `.codex2`, `.codex3`, `.codexl`). Existing settings/hooks
+are preserved and backed up privately. Custom config-directory mappings require
+manual setup. Codex requires review/trust through `/hooks`; Agent Glue never
+bypasses hook trust. Existing CLI sessions may need to reload their hook
+configuration. No terminal is restarted automatically.
 
-Explicit working and permission UI is observed only in the selected pane while
-Agent Glue is visible. Completion comes from saved task reports, not silence.
-Background rows show last observations or saved reports; after five minutes
-without fresh evidence they turn grey. Ordinary polling uses no AI tokens.
-This is not a live monitor of unselected panes. Use Terminal Status to refresh
-saved reports. The native UI limits badges to two characters; full elapsed time
-and helper details are supplied in the decoration tooltip where VS Code shows it.
+The observer only stores event names, timestamps, session IDs and tmux identity
+under Companion's global storage. It discards prompt text, tool payloads and
+transcript paths and does not read CLI history. Each pane has fixed event slots.
+Background status works while Terminals is visible, using a three-second local
+metadata refresh. Missing hooks show unknown; subagent events are not used to
+invent a live helper count. No status update makes an AI call.
 
 ## Terminal selector layout prototype
 
@@ -233,8 +234,7 @@ Terminal names and running processes are unchanged, and the built-in tab list
 remains available. The selector follows open/close/selection events without
 polling or reading terminal output.
 
-This is a layout prototype: activity statuses, timers and helper counts are not
-connected. The view is titled **Terminals** and uses neutral terminal icons; the selection highlight identifies the active terminal. Placement uses VS Code's
+Lifecycle indicators and elapsed minutes use the observer hooks described above. Helper counts are not yet shown. The view is titled **Terminals**; ordinary shells keep neutral terminal icons and agents show lifecycle indicators; the selection highlight identifies the active terminal. Placement uses VS Code's
 workbench `vscode.moveViews` command and needs desktop acceptance testing. Use
 **Agent Glue: Move Terminal Selector Back** to return it to its separate panel;
 the selector view can also be hidden through its view menu.
@@ -246,3 +246,7 @@ shells use their name, starting folder and location; indistinguishable shells
 can only be matched by occurrence after a reload. Duplicate names are labelled
 Tab 1/Tab 2, and editor terminals are identified where VS Code exposes their
 location. The selector includes editor terminals as well as panel terminals.
+
+When this selector is visible, `terminal.integrated.tabs.enabled` is set to false.
+The previous value and scope are remembered; **Move Terminal Selector Back** restores
+it unless you have changed the setting yourself. This only affects terminal UI.
