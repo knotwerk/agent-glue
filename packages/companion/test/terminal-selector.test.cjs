@@ -2,15 +2,15 @@
 const test=require('node:test'),assert=require('node:assert/strict');
 const {registerSelector}=require('../src/terminal-selector.cjs');
 function host(){
- const commands=new Map(),events={},calls=[],shown=[],reveals=[];
+ const commands=new Map(),events={},calls=[],shown=[],reveals=[];let changes=0;
  const a={name:'Same',show:focus=>shown.push(['a',focus])},b={name:'Same',show:focus=>shown.push(['b',focus])};
  const disposable=()=>({dispose(){}});
  const tree={visible:true,reveal:async(...args)=>reveals.push(args),onDidChangeVisibility:fn=>{events.visibility=fn;return disposable();},dispose(){}};
- const vscode={Uri:{file:fsPath=>({fsPath})},EventEmitter:class{event=()=>{};fire(){}dispose(){}},ThemeColor:class{constructor(id){this.id=id;}},ThemeIcon:class{constructor(id,color){this.id=id;this.color=color;}},commands:{registerCommand:(id,fn)=>{commands.set(id,fn);return disposable();},executeCommand:async(...args)=>calls.push(args)},window:{terminals:[a,b],activeTerminal:a,createTreeView:()=>tree,showInformationMessage:async()=>{}}};
+ const vscode={Uri:{file:fsPath=>({fsPath})},EventEmitter:class{event=()=>{};fire(){changes++;}dispose(){}},ThemeColor:class{constructor(id){this.id=id;}},ThemeIcon:class{constructor(id,color){this.id=id;this.color=color;}},commands:{registerCommand:(id,fn)=>{commands.set(id,fn);return disposable();},executeCommand:async(...args)=>calls.push(args)},window:{terminals:[a,b],activeTerminal:a,createTreeView:()=>tree,showInformationMessage:async()=>{}}};
  for(const event of ['onDidOpenTerminal','onDidCloseTerminal','onDidChangeActiveTerminal','onDidChangeTerminalState'])vscode.window[event]=fn=>{events[event]=fn;return disposable();};
  const values=new Map();vscode.DataTransferItem=class {constructor(value){this.value=value;}};
  const context={subscriptions:[],workspaceState:{get:(k,d)=>values.get(k)||d,update:async(k,v)=>values.set(k,v)}};
- const selector=registerSelector(vscode,context,t=>t===a?'claude-a':'codex-b');return {vscode,selector,commands,calls,shown,reveals,a,b,context,values};
+ const selector=registerSelector(vscode,context,t=>t===a?'claude-a':'codex-b');return {vscode,selector,commands,calls,shown,reveals,a,b,context,values,changedCount:()=>changes};
 }
 test('selector identifies duplicate names by terminal identity and never focuses a closed tab',()=>{
  const h=host(),p=h.selector.provider;assert.notEqual(p.getTreeItem(h.a).id,p.getTreeItem(h.b).id);
@@ -121,7 +121,8 @@ test('Split creates zsh in the resolved agent folder, groups rows and persists t
  assert.equal(list.provider.getParent(child),h.a);assert.equal(list.provider.getTreeItem(h.a).collapsibleState,2);
  assert.equal(list.provider.getTreeItem(child).contextValue,'agentGlueSplitTerminal');
  const again=registerSelector(h.vscode,h.context,t=>t===h.a?'agent-a':undefined);assert.deepEqual(again.provider.getChildren(h.a),[child]);
- child.show=()=>{h.vscode.window.activeTerminal=child;};await h.commands.get('agentGlue.moveSelectorTerminal')(child);
+ child.show=()=>{h.vscode.window.activeTerminal=child;};again.refresh();const changes=h.changedCount();await h.commands.get('agentGlue.moveSelectorTerminal')(child);
+ assert.ok(h.changedCount()>changes,'moving an already-selected split must redraw the group immediately');
  assert.deepEqual(h.calls.at(-1),['workbench.action.terminal.unsplit']);
  assert.equal(again.provider.getParent(child),undefined);assert.ok(again.provider.getChildren().includes(child));
  const afterReload=registerSelector(h.vscode,h.context,t=>t===h.a?'agent-a':undefined);assert.equal(afterReload.provider.getParent(child),undefined);

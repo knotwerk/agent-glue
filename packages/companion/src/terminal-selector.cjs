@@ -57,7 +57,7 @@ function registerSelector(vscode,context,sessionForTerminal=()=>undefined,status
   await vscode.commands.executeCommand('workbench.action.terminal.unsplit');
   markDetached(terminal);parents.delete(terminal);
   if(!root&&siblings.length){const [next,...rest]=siblings;parents.delete(next);markDetached(next);for(const child of rest){parents.set(child,next);detached.add(child);}}
-  await saveGroups();refresh();return true;
+  await saveGroups();changed.fire();refresh();return true;
  }
  const status=terminal=>sessionForTerminal(terminal)?statusForSession(sessionForTerminal(terminal)):undefined;
  const statusIcon=state=>{const color=({active:'amber',blocked:'red',done:'green'})[state.status]||'grey';const media=path.join(context.extensionPath||path.resolve(__dirname,'..'),'media');return {light:vscode.Uri.file(path.join(media,'status-'+color+'-light.svg')),dark:vscode.Uri.file(path.join(media,'status-'+color+'-dark.svg'))};};
