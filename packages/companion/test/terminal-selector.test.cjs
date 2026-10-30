@@ -6,11 +6,11 @@ function host(){
  const a={name:'Same',show:focus=>shown.push(['a',focus])},b={name:'Same',show:focus=>shown.push(['b',focus])};
  const disposable=()=>({dispose(){}});
  const tree={visible:true,reveal:async(...args)=>reveals.push(args),onDidChangeVisibility:fn=>{events.visibility=fn;return disposable();},dispose(){}};
- const vscode={Uri:{file:fsPath=>({fsPath})},EventEmitter:class{event=()=>{};fire(){changes++;}dispose(){}},ThemeColor:class{constructor(id){this.id=id;}},ThemeIcon:class{constructor(id,color){this.id=id;this.color=color;}},commands:{registerCommand:(id,fn)=>{commands.set(id,fn);return disposable();},executeCommand:async(...args)=>calls.push(args)},window:{terminals:[a,b],activeTerminal:a,createTreeView:()=>tree,showInformationMessage:async()=>{}}};
+ const vscode={Uri:{file:fsPath=>({fsPath})},EventEmitter:class{event=()=>{};fire(){changes++;}dispose(){}},ThemeColor:class{constructor(id){this.id=id;}},ThemeIcon:class{constructor(id,color){this.id=id;this.color=color;}},commands:{registerCommand:(id,fn)=>{commands.set(id,fn);return disposable();},executeCommand:async(...args)=>calls.push(args)},window:{terminals:[a,b],activeTerminal:a,createTreeView:()=>tree,showInformationMessage:async()=>{},showInputBox:async()=> 'Renamed'}};
  for(const event of ['onDidOpenTerminal','onDidCloseTerminal','onDidChangeActiveTerminal','onDidChangeTerminalState'])vscode.window[event]=fn=>{events[event]=fn;return disposable();};
  const values=new Map();vscode.DataTransferItem=class {constructor(value){this.value=value;}};
  const context={subscriptions:[],workspaceState:{get:(k,d)=>values.get(k)||d,update:async(k,v)=>values.set(k,v)}};
- const selector=registerSelector(vscode,context,t=>t===a?'claude-a':'codex-b');return {vscode,selector,commands,calls,shown,reveals,a,b,context,values,changedCount:()=>changes};
+ const selector=registerSelector(vscode,context,t=>t===a?'claude-a':'codex-b');return {vscode,selector,commands,calls,shown,reveals,a,b,context,values,events,changedCount:()=>changes};
 }
 test('selector identifies duplicate names by terminal identity and never focuses a closed tab',()=>{
  const h=host(),p=h.selector.provider;assert.notEqual(p.getTreeItem(h.a).id,p.getTreeItem(h.b).id);
@@ -76,7 +76,7 @@ test('RAG rows show dots and timing without status words, and hidden terminals s
  assert.equal(list.provider.getTreeItem(h.b).description,'5s ago · Tab 2');
  assert.match(list.provider.getTreeItem(h.b).tooltip,/Reported · 5s ago/);
  assert.match(list.provider.getTreeItem(h.a).iconPath.light.fsPath,/status-amber-light.svg$/);
- assert.match(list.provider.getTreeItem(h.b).iconPath.dark.fsPath,/status-green-dark.svg$/);
+ assert.match(list.provider.getTreeItem(h.b).iconPath.dark.fsPath,/status-green-new-dark.svg$/);
 });
 
 test('selected status dots retain intrinsic color and update when status changes',()=>{
@@ -94,9 +94,9 @@ test('context Rename waits for the clicked terminal and never renames a closed r
  h.vscode.window.onDidChangeActiveTerminal=fn=>{activated=fn;return {dispose(){}};};
  registerSelector(h.vscode,h.context);
  const action=h.commands.get('agentGlue.renameSelectorTerminal');
- const rename=action(h.b);assert.deepEqual(h.shown,[['b',false]]);assert.deepEqual(h.calls,[]);
+ const rename=action(h.b);await new Promise(resolve=>setImmediate(resolve));assert.deepEqual(h.shown,[['b',false]]);assert.deepEqual(h.calls,[]);
  h.vscode.window.activeTerminal=h.b;activated(h.b);await rename;
- assert.deepEqual(h.calls,[['workbench.action.terminal.rename']]);
+ assert.deepEqual(h.calls,[['workbench.action.terminal.renameWithArg',{name:'Renamed'}]]);
  h.vscode.window.terminals=[h.a];await action(h.b);assert.equal(h.calls.length,1);
  const menu=require('../package.json').contributes.menus['view/item/context'];
  assert.ok(menu.some(m=>m.command==='agentGlue.renameSelectorTerminal'&&m.when==='view == agentGlue.terminalSelector'&&!m.group.startsWith('inline')));
@@ -105,7 +105,7 @@ test('context Rename waits for the clicked terminal and never renames a closed r
 test('Rename aborts if the terminal closes before selection completes',async()=>{
  const h=host();let activated;
  h.vscode.window.onDidChangeActiveTerminal=fn=>{activated=fn;return {dispose(){}};};registerSelector(h.vscode,h.context);
- const rename=h.commands.get('agentGlue.renameSelectorTerminal')(h.b);
+ const rename=h.commands.get('agentGlue.renameSelectorTerminal')(h.b);await new Promise(resolve=>setImmediate(resolve));
  h.vscode.window.terminals=[h.a];h.vscode.window.activeTerminal=h.b;activated(h.b);await rename;
  assert.deepEqual(h.calls,[]);
 });
@@ -145,4 +145,33 @@ test('moving the first pane out preserves the remaining split group',async()=>{
  await h.commands.get('agentGlue.moveSelectorTerminal')(h.a);
  assert.equal(list.provider.getParent(c),undefined);assert.equal(list.provider.getParent(d),c);assert.deepEqual(list.provider.getChildren(h.a),[]);
  const restored=registerSelector(h.vscode,h.context);assert.equal(restored.provider.getParent(d),c);assert.equal(restored.provider.getParent(c),undefined);
+});
+
+test('new completion rings persist, clear after two seconds of viewing and can be marked unread',async t=>{
+ t.mock.timers.enable({apis:['setTimeout']});const h=host();let at=Date.now()-1000;
+ const list=registerSelector(h.vscode,h.context,terminal=>terminal===h.a?'a':'b',()=>({status:'done',label:'Turn finished',at}));
+ const icon=terminal=>list.provider.getTreeItem(terminal).iconPath.dark.fsPath;
+ assert.match(icon(h.b),/status-green-new-dark.svg$/);
+ h.b.show=()=>{h.vscode.window.activeTerminal=h.b;};
+ h.commands.get('agentGlue.focusSelectorTerminal')(h.b);t.mock.timers.tick(1999);assert.match(icon(h.b),/green-new/);
+ t.mock.timers.tick(1);assert.match(icon(h.b),/status-green-dark.svg$/);assert.match(icon(h.a),/green-new/);
+ const reloaded=registerSelector(h.vscode,h.context,terminal=>terminal===h.a?'a':'b',()=>({status:'done',at}));assert.match(reloaded.provider.getTreeItem(h.b).iconPath.dark.fsPath,/status-green-dark.svg$/);
+ await h.commands.get('agentGlue.markSelectorUnread')(h.b);t.mock.timers.tick(3000);assert.match(reloaded.provider.getTreeItem(h.b).iconPath.dark.fsPath,/green-new/);
+ at+=1;assert.match(reloaded.provider.getTreeItem(h.b).iconPath.dark.fsPath,/green-new/);
+ h.commands.get('agentGlue.focusSelectorTerminal')(h.b);h.vscode.window.activeTerminal=h.a;h.events.onDidChangeActiveTerminal(h.a);t.mock.timers.tick(2000);assert.match(reloaded.provider.getTreeItem(h.b).iconPath.dark.fsPath,/green-new/,'quickly switching away must not mark read');
+ for(const d of h.context.subscriptions)d.dispose?.();
+});
+
+test('right-click New Terminal creates an independent zsh in the clicked terminal folder',async()=>{
+ const h=host();let options,shown=false;
+ h.vscode.window.showQuickPick=()=>assert.fail('No shell picker');
+ h.vscode.window.createTerminal=value=>{options=value;return {show:()=>{shown=true;}};};
+ registerSelector(h.vscode,h.context,()=>undefined,()=>undefined,async terminal=>terminal===h.b?'/selected/project':'/other');
+ await h.commands.get('agentGlue.newSelectorShell')(h.b);assert.deepEqual(options,{name:'zsh',shellPath:'zsh',cwd:'/selected/project'});assert.equal(shown,true);
+ h.vscode.window.terminals=[h.a];options=undefined;await h.commands.get('agentGlue.newSelectorShell')(h.b);assert.equal(options,undefined);
+});
+
+test('rename cancellation and closing while the name prompt is open leave all terminals unchanged',async()=>{
+ const h=host();h.vscode.window.showInputBox=async()=>undefined;await h.commands.get('agentGlue.renameSelectorTerminal')(h.a);assert.deepEqual(h.calls,[]);
+ h.vscode.window.showInputBox=async()=>{h.vscode.window.terminals=[h.a];return 'New name';};await h.commands.get('agentGlue.renameSelectorTerminal')(h.b);assert.deepEqual(h.calls,[]);assert.deepEqual(h.shown,[]);
 });

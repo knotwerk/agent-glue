@@ -1,5 +1,5 @@
 {
-  "version": "0.1.75",
+  "version": "0.1.76",
   "activationEvents": [
     "onStartupFinished"
   ],
@@ -128,6 +128,14 @@
       {
         "command": "agentGlue.linkCodexStatus",
         "title": "Link Codex Status\u2026"
+      },
+      {
+        "command": "agentGlue.newSelectorShell",
+        "title": "New Terminal"
+      },
+      {
+        "command": "agentGlue.markSelectorUnread",
+        "title": "Mark Unread"
       }
     ],
     "viewsContainers": {
@@ -266,6 +274,16 @@
           "command": "agentGlue.linkCodexStatus",
           "when": "view == agentGlue.terminalSelector && viewItem =~ /^agentGlueAgent/",
           "group": "2_status"
+        },
+        {
+          "command": "agentGlue.newSelectorShell",
+          "when": "view == agentGlue.terminalSelector",
+          "group": "1_manage@0"
+        },
+        {
+          "command": "agentGlue.markSelectorUnread",
+          "when": "view == agentGlue.terminalSelector && viewItem =~ /^agentGlueAgent/",
+          "group": "2_status@2"
         }
       ],
       "commandPalette": [
@@ -283,6 +301,14 @@
         },
         {
           "command": "agentGlue.linkCodexStatus",
+          "when": "false"
+        },
+        {
+          "command": "agentGlue.newSelectorShell",
+          "when": "false"
+        },
+        {
+          "command": "agentGlue.markSelectorUnread",
           "when": "false"
         }
       ]

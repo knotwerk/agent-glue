@@ -208,6 +208,9 @@ when that start event is missing; tool events do not reset it. Other timestamps
 show time since the recorded update. Hidden VS Code tool terminals are
 excluded from the list.
 Green means the agent finished responding, not that all project work is complete.
+A yellow ring marks an unread completion. Open the terminal and keep it selected
+for two seconds to mark that completion read; right-click **Mark Unread** to restore
+the ring. Read marks survive reloads, and the next completed turn gets a new ring.
 A permission indicator clears on the next recorded tool/prompt/completion event;
 it can remain red while an approved long-running tool finishes. A working/waiting event older
 than 15 minutes becomes unknown. A confirmed finished turn stays green with its
@@ -230,6 +233,10 @@ The link uses an exact conversation ID stored in tmux, not a folder/name guess;
 forks with an existing exact ID can reuse it. Relink when switching to a different
 conversation in the same terminal. Direct CLI processes are matched through their
 actual process ancestry. Neither method reads conversation history or restarts agents.
+Events received without a terminal match are now kept in a separate status-only
+conversation journal. After linking, Agent Glue recovers that conversation's
+latest status and any recorded turn start immediately. It does not guess the
+link from the folder, and conflicting links stay unknown.
 
 The observer only stores event names, timestamps, session IDs and tmux identity
 under Companion's global storage. It discards prompt text, tool payloads and
@@ -269,7 +276,9 @@ The **Terminals** list supports hover actions for Fork Conversation (on mapped a
 chosen terminal). Split starts **zsh** in the agent pane's current folder, falling
 back to shell integration or the terminal's starting folder for ordinary shells.
 Splits created here appear together in an expandable group, retained across reloads.
-Right-click for **Rename Terminal** or **Move to Own Terminal**. Drag a split onto
+Right-click for **Rename Terminal**, **New Terminal** (an independent zsh in the
+clicked terminal's folder), **Mark Unread**, or **Move to Own Terminal**. Rename
+opens a name box and applies the result to the clicked terminal. Drag a split onto
 blank space or outside its group to move it into its own native terminal group;
 drag the parent row to reorder the group together. It deliberately has no Close action. Drag rows to reorder;
 the order is saved per workspace using tmux session names where known. Ordinary

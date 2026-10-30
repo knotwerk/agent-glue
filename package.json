@@ -1,6 +1,6 @@
 {
   "name": "agent-glue",
-  "version": "0.1.75",
+  "version": "0.1.76",
   "private": true,
   "description": "Native agent terminals with document previews and remote attachments",
   "engines": {
@@ -16,7 +16,8 @@
     "check": "node scripts/check.cjs",
     "build": "node scripts/build.cjs",
     "package": "npm run build && node scripts/package.cjs",
-    "screenshots": "node scripts/screenshots.cjs"
+    "screenshots": "node scripts/screenshots.cjs",
+    "test:ui": "node scripts/test-terminal-ui.cjs"
   },
   "devDependencies": {
     "@vscode/vsce": "4.0.0",

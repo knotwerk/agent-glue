@@ -4,14 +4,22 @@ const fs=require('node:fs/promises'),path=require('node:path'),crypto=require('n
 const EVENTS=['SessionStart','UserPromptSubmit','PreToolUse','PostToolUse','PermissionRequest','Notification','Stop','Interrupt','SessionEnd'];
 const root=()=>path.join(require('node:os').homedir(),'.local','state','agent-glue','lifecycle');
 const key=(server,pane)=>crypto.createHash('sha256').update(server+':'+pane).digest('hex');
+const threadKey=session=>crypto.createHash('sha256').update(session).digest('hex');
+function storedThreadEvent(value){
+ if(!value||!EVENTS.includes(value.event)||typeof value.session!=='string'||!value.session||value.session.length>200||!Number.isSafeInteger(value.at)||value.at<0)return;
+ return {event:value.event,session:value.session,at:value.at};
+}
 function storedEvent(value){
  if(!value||!EVENTS.includes(value.event)||typeof value.session!=='string'||!value.session||value.session.length>200||!/^\d{1,20}$/.test(value.server)||!/^%\d{1,20}$/.test(value.pane)||!/^\d{1,20}$/.test(value.created)||!Number.isSafeInteger(value.at)||value.at<0)return;
  return {event:value.event,session:value.session,server:String(value.server),pane:value.pane,created:String(value.created),at:value.at};
 }
-function eventRecord(input,identity,now=Date.now()){
+function inputEvent(input,now=Date.now()){
  if(!EVENTS.includes(input.hook_event_name)||input.agent_id||typeof input.session_id!=='string'||input.session_id.length>200)return;
  if(input.hook_event_name==='Notification'&&!['permission_prompt','elicitation_dialog'].includes(input.notification_type))return;
- return storedEvent({event:input.hook_event_name,session:input.session_id,server:String(identity.server),pane:identity.pane,created:String(identity.created),at:now});
+ return storedThreadEvent({event:input.hook_event_name,session:input.session_id,at:now});
+}
+function eventRecord(input,identity,now=Date.now()){
+ const event=inputEvent(input,now);if(event)return storedEvent({...event,server:String(identity.server),pane:identity.pane,created:String(identity.created)});
 }
 async function privateDirectory(dir){
  await fs.mkdir(dir,{recursive:true,mode:0o700});
@@ -44,6 +52,14 @@ async function writeEvent(base,event){
  const parent=await fs.open(base,'r');try{await parent.sync();}finally{await parent.close();}
  await atomicJson(path.join(dir,event.event+'.json'),event);
 }
+async function writeUnlinkedEvent(base,event){
+ event=storedThreadEvent(event);if(!event)throw Error('Invalid observer event');
+ const threads=path.join(base,'threads');await privateDirectory(threads);
+ const dir=path.join(threads,threadKey(event.session));await privateDirectory(dir);
+ await appendRecord(path.join(dir,'events.jsonl'),event);
+ for(const parent of [threads,base]){const directory=await fs.open(parent,'r');try{await directory.sync();}finally{await directory.close();}}
+ await atomicJson(path.join(dir,event.event+'.json'),event);
+}
 function identityFromProcesses(panes,processes,pid,thread){
  const bound=panes.trim().split('\n').map(line=>line.split('\x1f')).filter(fields=>thread&&fields[4]===thread);
  if(bound.length===1){const [,server,pane,created]=bound[0];if(/^\d+$/.test(server)&&/^%\d+$/.test(pane)&&/^\d+$/.test(created))return {server,pane,created};}
@@ -64,7 +80,7 @@ async function observe({base,input=process.stdin,exec=require('node:util').promi
  try{
   let text='';for await(const chunk of input){text+=chunk;if(text.length>1024*1024)throw Error('Oversized input');}
   const payload=JSON.parse(text),receivedAt=now();eventName=EVENTS.includes(payload.hook_event_name)?payload.hook_event_name:undefined;sessionId=typeof payload.session_id==='string'&&payload.session_id.length<=200?payload.session_id:undefined;stage='tmux_lookup';
-  if(!eventName||!sessionId||payload.agent_id)return;
+  const metadata=inputEvent(payload,receivedAt);if(!metadata)return;
   // Codex may reuse a shell environment snapshot containing another pane ID.
   // Match this hook's actual ancestry to pane roots; never trust TMUX_PANE as
   // identity, even when it happens to point at a still-live unrelated pane.
@@ -73,8 +89,9 @@ async function observe({base,input=process.stdin,exec=require('node:util').promi
    exec('ps',['-eo','pid=,ppid='],{timeout:600,maxBuffer:1024*1024})
   ]);
   stage='tmux_identity';const identity=identityFromProcesses(panes.stdout,processes.stdout,pid,sessionId);
-  if(!identity)throw Error('No unique pane ancestor');
-  const event=eventRecord(payload,identity,receivedAt);stage='storage';if(event)await writeEvent(base,event);
+  // Preserve status-only events from a detached server until the user supplies
+  // an exact conversation link. Never guess from a folder or ambient TMUX_PANE.
+  stage='storage';if(identity)await writeEvent(base,eventRecord(payload,identity,receivedAt));else await writeUnlinkedEvent(base,metadata);
  }catch(error){
   // Only fixed reason codes, never exception text or hook input. Fail open even
   // when the diagnostic log itself cannot be written.
@@ -88,4 +105,4 @@ if(require.main===module&&process.argv.includes('--agent-glue-hook')){
  const rootIndex=process.argv.indexOf('--event-root'),base=rootIndex>=0?process.argv[rootIndex+1]:root();
  observe({base}).finally(()=>process.stdout.write('{}\n'));
 }
-module.exports={EVENTS,root,key,eventRecord,storedEvent,writeEvent,appendRecord,atomicJson,observe,identityFromProcesses};
+module.exports={EVENTS,root,key,threadKey,eventRecord,storedEvent,storedThreadEvent,writeEvent,writeUnlinkedEvent,appendRecord,atomicJson,observe,identityFromProcesses};

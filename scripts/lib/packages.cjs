@@ -10,7 +10,7 @@ const vsixDir = path.join(root, 'dist/vsix');
 
 const materialMedia=['css','document','html','image','javascript','json','markdown','pdf','python','table','typescript','zip'].map(name=>`media/material-${name}.svg`).concat('media/material-license.txt');
 
-const statusMedia=['red','amber','green','grey'].flatMap(color=>['light','dark'].map(theme=>`media/status-${color}-${theme}.svg`));
+const statusMedia=['red','amber','green','green-new','grey'].flatMap(color=>['light','dark'].map(theme=>`media/status-${color}-${theme}.svg`));
 
 const packages = {
   'mac-dictation': {

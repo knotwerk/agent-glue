@@ -35,6 +35,23 @@ maintainer’s explicit approval; elapsed time and passing checks are not approv
 - A known gap is recorded as a `todo` test with the reason. Remove `todo` when
   fixing it.
 
+### Terminal UI regression test
+
+`npm run test:ui` tests the real selector in an isolated VS Code web workbench:
+rename the clicked terminal, working/completed colours, the unread ring, delayed
+mark-as-read and Mark Unread. Its terminals are synthetic pseudoterminals; it
+starts no shell or agent and does not connect to tmux. It uses a separate home,
+profile and extension folder under ignored `_script_outputs/`, and closes only
+its own browser and server afterward. Existing sessions are untouched.
+
+Extract an official VS Code **web server** build matching the desktop version
+under `_script_outputs/vscode-ui-runtime`, or set `AGENT_GLUE_VSCODE_RUNTIME`
+to its directory (containing `node` and `out/server-main.js`). Install Chromium
+with `npx playwright install chromium`, or set `AGENT_GLUE_CHROMIUM` to an
+existing executable. Then run `npm run test:ui`. This optional test fails with
+setup instructions when prerequisites are missing; the normal suite still uses
+the fake host. Screenshots and test logs remain in the ignored output folder.
+
 ## Before delivering a release
 
 ```sh

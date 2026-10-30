@@ -148,3 +148,29 @@ test('linking parses only a session ID and rejects stale pane identities',async(
  assert.deepEqual(calls[1],['set-option','-p','-t','%2','@agent_glue_thread_id',id]);
  await assert.rejects(bindThread(session,id,async()=>({stdout:'10\x1f%2\x1f6\n'})),/terminal changed/);
 });
+
+test('unlinked daemon events recover immediately after an exact link, including the prompt timer',async()=>{
+ const {tempDir}=require('../../../test/support/tmp.cjs');const {observe,threadKey}=require('../src/lifecycle-hook.cjs');
+ const base=tempDir('unlinked-events'),now=Date.now(),id='11111111-2222-3333-4444-555555555555';
+ const exec=async file=>({stdout:file==='tmux'?'5000\x1f10\x1f%2\x1f5\n':'9000 8000\n8000 1\n'});
+ for(const [event,at] of [['UserPromptSubmit',now-5000],['PreToolUse',now-1000]])await observe({base,pid:9000,exec,now:()=>at,input:[JSON.stringify({hook_event_name:event,session_id:id,prompt:'private',transcript_path:'/secret'})]});
+ const lifecycle=new Lifecycle(base);await lifecycle.refresh([session]);assert.equal(lifecycle.get(session.sessionName).status,'unknown');
+ const linked={...session,threadId:id};await lifecycle.refresh([linked]);assert.equal(lifecycle.get(session.sessionName).status,'active');assert.equal(lifecycle.get(session.sessionName).since,now-5000);
+ const journal=await fs.readFile(path.join(base,'threads',threadKey(id),'events.jsonl'),'utf8');assert.doesNotMatch(journal,/private|secret|prompt|transcript|pane|server|created/);
+ await writeEvent(base,{...record('Stop',now),session:id});await lifecycle.refresh([linked]);assert.equal(lifecycle.get(session.sessionName).status,'done');
+ const reloaded=new Lifecycle(base);await reloaded.refresh([linked]);assert.equal(reloaded.get(session.sessionName).status,'done');
+ await reloaded.refresh([{...linked,threadId:'another-conversation'}]);assert.equal(reloaded.get(session.sessionName).status,'unknown','a new conversation must not inherit the previous green dot');
+});
+
+test('unlinked child agents and irrelevant notifications are never retained',async()=>{
+ const {tempDir}=require('../../../test/support/tmp.cjs');const {observe}=require('../src/lifecycle-hook.cjs');const base=tempDir('unlinked-ignore');
+ for(const input of [{hook_event_name:'Stop',agent_id:'child',session_id:'parent'},{hook_event_name:'Notification',notification_type:'idle_prompt',session_id:'parent'}])await observe({base,pid:9000,input:[JSON.stringify(input)],exec:async()=>({stdout:''})});
+ assert.deepEqual(await fs.readdir(base),[]);
+});
+
+test('an exact conversation linked to two different panes cannot colour both as finished',async()=>{
+ const {tempDir}=require('../../../test/support/tmp.cjs');const {writeUnlinkedEvent}=require('../src/lifecycle-hook.cjs');const base=tempDir('duplicate-thread-links');
+ await writeUnlinkedEvent(base,{event:'Stop',session:'same-thread',at:Date.now()});
+ const lifecycle=new Lifecycle(base);await lifecycle.refresh([{...session,threadId:'same-thread'},{...session,pane:'%3',sessionName:'other-terminal',threadId:'same-thread'}]);
+ assert.equal(lifecycle.get(session.sessionName).status,'unknown');assert.equal(lifecycle.get('other-terminal').status,'unknown');assert.match(lifecycle.get('other-terminal').label,/multiple terminals/);
+});

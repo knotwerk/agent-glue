@@ -8,12 +8,12 @@ const MAX_BYTES = 200 * 1024 * 1024;
 const supported = p => /\.(md|markdown|html?)$/i.test(p);
 function parseSessions(output) {
   return output.trim().split('\n').filter(Boolean).map(line => {
-    const [id, name, pane, cwd, title, serverPid, created] = line.split('\x1f');
-    return { id, serverPid, created, name: title || name, sessionName:name, pane, cwd, profile:name?.split('-')[0], available:true };
+    const [id, name, pane, cwd, title, serverPid, created, threadId] = line.split('\x1f');
+    return { id, serverPid, created, ...(threadId?{threadId}:{}), name: title || name, sessionName:name, pane, cwd, profile:name?.split('-')[0], available:true };
   }).filter(s => /^\$\d+$/.test(s.id) && /^%\d+$/.test(s.pane) && /^(codex[23l]?|claude[2l]?|claudelp)(?:-|$)/.test(s.sessionName)).map(s=>({...s,id:s.serverPid&&s.created?`${s.serverPid}:${s.id}:${s.created}`:s.id}));
 }
 async function sessions(exec = run) {
-  try { return parseSessions((await exec('tmux',['list-panes','-a','-F','#{?#{&&:#{window_active},#{pane_active}},#{session_id}\x1f#{session_name}\x1f#{pane_id}\x1f#{pane_current_path}\x1f#{@title}\x1f#{pid}\x1f#{session_created},}'], {maxBuffer:1024*1024})).stdout); }
+  try { return parseSessions((await exec('tmux',['list-panes','-a','-F','#{?#{&&:#{window_active},#{pane_active}},#{session_id}\x1f#{session_name}\x1f#{pane_id}\x1f#{pane_current_path}\x1f#{@title}\x1f#{pid}\x1f#{session_created}\x1f#{@agent_glue_thread_id},}'], {maxBuffer:1024*1024})).stdout); }
   catch (error) { if (/no server running|no such file/i.test(error.stderr || '')) return []; throw error; }
 }
 function sessionForTerminal(terminal,list,mappedName){

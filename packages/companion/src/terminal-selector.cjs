@@ -60,7 +60,18 @@ function registerSelector(vscode,context,sessionForTerminal=()=>undefined,status
   await saveGroups();changed.fire();refresh();return true;
  }
  const status=terminal=>sessionForTerminal(terminal)?statusForSession(sessionForTerminal(terminal)):undefined;
- const statusIcon=state=>{const color=({active:'amber',blocked:'red',done:'green'})[state.status]||'grey';const media=path.join(context.extensionPath||path.resolve(__dirname,'..'),'media');return {light:vscode.Uri.file(path.join(media,'status-'+color+'-light.svg')),dark:vscode.Uri.file(path.join(media,'status-'+color+'-dark.svg'))};};
+ const readCompletions={...context.workspaceState?.get('terminalSelector.readCompletions',{})};
+ const unread=terminal=>{const state=status(terminal);return state?.status==='done'&&Number.isFinite(state.at)&&readCompletions[sessionForTerminal(terminal)]!==state.at;};
+ let readTimer;
+ const scheduleRead=terminal=>{
+  clearTimeout(readTimer);if(!isOpen(terminal)||!unread(terminal))return;
+  const name=sessionForTerminal(terminal),at=status(terminal).at;
+  readTimer=setTimeout(()=>{
+   if(!isOpen(terminal)||vscode.window.activeTerminal!==terminal||sessionForTerminal(terminal)!==name||status(terminal)?.status!=='done'||status(terminal).at!==at)return;
+   readCompletions[name]=at;void context.workspaceState?.update('terminalSelector.readCompletions',{...readCompletions});changed.fire();
+  },2000);
+ };
+ const statusIcon=(state,fresh)=>{const color=({active:'amber',blocked:'red',done:fresh?'green-new':'green'})[state.status]||'grey';const media=path.join(context.extensionPath||path.resolve(__dirname,'..'),'media');return {light:vscode.Uri.file(path.join(media,'status-'+color+'-light.svg')),dark:vscode.Uri.file(path.join(media,'status-'+color+'-dark.svg'))};};
  const provider={onDidChangeTreeData:changed.event,getChildren:children,
   getTreeItem(terminal){
    if(!ids.has(terminal))ids.set(terminal,String(++nextId));
@@ -74,8 +85,8 @@ function registerSelector(vscode,context,sessionForTerminal=()=>undefined,status
    const group=children(terminal).length>0,split=parents.has(terminal),agent=Boolean(sessionForTerminal(terminal));
    const contextValue=agent?(group?'agentGlueAgentGroupTerminal':split?'agentGlueAgentSplitTerminal':'agentGlueAgentTerminal'):(group?'agentGlueGroupTerminal':split?'agentGlueSplitTerminal':'agentGlueTerminal');
    return {id:ids.get(terminal),label:terminal.name,description:description||undefined,contextValue,collapsibleState:group?2:0,
-    iconPath:state?statusIcon(state):new vscode.ThemeIcon('terminal'),
-    tooltip:terminal.name+' — '+(selected?'selected terminal':'click to focus')+'\n'+(sessionForTerminal(terminal)||'Shell terminal')+'\n'+(state?state.label+(elapsed?' · '+elapsed:'')+(state.at?' · '+new Date(state.at).toLocaleTimeString():''):'Shell terminal'),
+    iconPath:state?statusIcon(state,unread(terminal)):new vscode.ThemeIcon('terminal'),
+    tooltip:terminal.name+' — '+(selected?'selected terminal':'click to focus')+'\n'+(sessionForTerminal(terminal)||'Shell terminal')+'\n'+(state?state.label+(elapsed?' · '+elapsed:'')+(state.at?' · '+new Date(state.at).toLocaleTimeString():''):'Shell terminal')+(unread(terminal)?'\nNew completion — open this terminal to mark read':''),
     command:{command:'agentGlue.focusSelectorTerminal',title:'Focus terminal',arguments:[terminal]}};
   },getParent:terminal=>{children();return parents.get(terminal);}};
  const dragAndDropController={dragMimeTypes:[mime],dropMimeTypes:[mime],
@@ -111,12 +122,25 @@ function registerSelector(vscode,context,sessionForTerminal=()=>undefined,status
  hideSafely();
  context.subscriptions.push(changed,tree,
   vscode.commands.registerCommand('agentGlue.newSelectorTerminal',()=>vscode.commands.executeCommand('workbench.action.terminal.newWithProfile')),
-  vscode.commands.registerCommand('agentGlue.focusSelectorTerminal',terminal=>{if(isOpen(terminal))terminal.show(false);}),
+  vscode.commands.registerCommand('agentGlue.focusSelectorTerminal',terminal=>{if(isOpen(terminal)){terminal.show(false);scheduleRead(terminal);}}),
+  vscode.commands.registerCommand('agentGlue.markSelectorUnread',async terminal=>{
+   if(!isOpen(terminal)||status(terminal)?.status!=='done')return;
+   clearTimeout(readTimer);delete readCompletions[sessionForTerminal(terminal)];
+   await context.workspaceState?.update('terminalSelector.readCompletions',{...readCompletions});changed.fire();
+  }),
+  vscode.commands.registerCommand('agentGlue.newSelectorShell',async terminal=>{
+   if(!isOpen(terminal))return;
+   const cwd=await cwdForTerminal(terminal);if(!isOpen(terminal))return;
+   vscode.window.createTerminal({name:'zsh',shellPath:'zsh',...(cwd?{cwd}:{})}).show(false);
+  }),
   vscode.commands.registerCommand('agentGlue.renameSelectorTerminal',async terminal=>{
-   // show() crosses the extension-host boundary. Wait for confirmation before
-   // invoking the native rename dialog so another selected row isn't renamed.
+   if(!isOpen(terminal))return;
+   // Own the selector's name prompt, then confirm the clicked terminal is
+   // active before applying the name through the native RenameWithArgs command.
+   const name=await vscode.window.showInputBox({title:'Rename Terminal',value:terminal.name,prompt:'Choose a name for this terminal',validateInput:value=>value.trim()?undefined:'Enter a terminal name.'});
+   if(name===undefined||!name.trim())return;
    if(!await selectTerminal(terminal))return;
-   await vscode.commands.executeCommand('workbench.action.terminal.rename');refresh();
+   await vscode.commands.executeCommand('workbench.action.terminal.renameWithArg',{name:name.trim()});refresh();
   }),
   vscode.commands.registerCommand('agentGlue.moveSelectorTerminal',moveToOwnTerminal),
   vscode.commands.registerCommand('agentGlue.splitSelectorTerminal',async terminal=>{
@@ -148,7 +172,9 @@ function registerSelector(vscode,context,sessionForTerminal=()=>undefined,status
   parents.delete(terminal);if(siblings.length){const [next,...rest]=siblings;parents.delete(next);markDetached(next);for(const child of rest){parents.set(child,next);detached.add(child);}}
   children();void saveGroups();refresh();
  }));
- for(const event of ['onDidChangeActiveTerminal','onDidChangeTerminalState'])if(vscode.window[event])context.subscriptions.push(vscode.window[event](refresh));
+ if(vscode.window.onDidChangeActiveTerminal)context.subscriptions.push(vscode.window.onDidChangeActiveTerminal(terminal=>{scheduleRead(terminal);refresh();}));
+ if(vscode.window.onDidChangeTerminalState)context.subscriptions.push(vscode.window.onDidChangeTerminalState(refresh));
+ context.subscriptions.push({dispose(){clearTimeout(readTimer);}});
  context.subscriptions.push(tree.onDidChangeVisibility(()=>{refresh();hideSafely();}));
  return {provider,refresh,dragAndDropController,get visible(){return tree.visible;}};
 }
