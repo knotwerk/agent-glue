@@ -1,5 +1,5 @@
 {
-  "version": "0.1.65",
+  "version": "0.1.66",
   "activationEvents": [
     "onStartupFinished"
   ],
@@ -90,6 +90,15 @@
       {
         "command": "agentGlue.webApps",
         "title": "Agent Glue: Show All Web Apps"
+      },
+      {
+        "command": "agentGlue.tryTerminalSelector",
+        "title": "Agent Glue: Try Terminal Selector Beside Terminals",
+        "icon": "$(list-selection)"
+      },
+      {
+        "command": "agentGlue.resetTerminalSelector",
+        "title": "Agent Glue: Move Terminal Selector Back"
       }
     ],
     "viewsContainers": {
@@ -97,6 +106,13 @@
         {
           "id": "agentGlue",
           "title": "Agent Glue",
+          "icon": "media/icon.svg"
+        }
+      ],
+      "panel": [
+        {
+          "id": "agentGlueSelector",
+          "title": "Terminal Selector",
           "icon": "media/icon.svg"
         }
       ]
@@ -107,6 +123,13 @@
           "type": "webview",
           "id": "agentGlue.companion",
           "name": "Agent Glue"
+        }
+      ],
+      "agentGlueSelector": [
+        {
+          "id": "agentGlue.terminalSelector",
+          "name": "Terminal Selector",
+          "visibility": "hidden"
         }
       ]
     },
@@ -153,6 +176,16 @@
           "command": "agentGlue.showtasks",
           "when": "view == agentGlue.companion",
           "group": "navigation@2.5"
+        },
+        {
+          "command": "agentGlue.tryTerminalSelector",
+          "when": "view == terminal",
+          "group": "navigation@9"
+        },
+        {
+          "command": "agentGlue.resetTerminalSelector",
+          "when": "view == agentGlue.terminalSelector",
+          "group": "2_layout"
         }
       ],
       "terminal/title/context": [

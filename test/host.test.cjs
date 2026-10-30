@@ -34,6 +34,8 @@ function fakeHost({ trusted = true, sessionsApi, globalSettings = {} } = {}) {
     update: async (key, value) => { log.settings.push([`${section}.${key}`, value]); if (value === undefined) delete settings[`${section}.${key}`]; else settings[`${section}.${key}`] = value; },
   });
   const vscode = {
+    EventEmitter: class { event=()=>({dispose(){}}); fire(){} dispose(){} },
+    ThemeIcon: class { constructor(id){this.id=id;} },
     ViewColumn: { Beside: -2, One: 1, Active: -1 },
     ConfigurationTarget: { Global: 1 },
     Uri: { file: fsPath => ({ fsPath }), joinPath: (base, ...parts) => ({ fsPath: path.join(base.fsPath, ...parts) }) },
@@ -42,6 +44,8 @@ function fakeHost({ trusted = true, sessionsApi, globalSettings = {} } = {}) {
     env: { clipboard: { writeText: async t => log.clipboard.push(t) } },
     commands: { getCommands:async()=>[], registerCommand: (id, fn) => { log.commands.set(id, fn); return { dispose() {} }; }, executeCommand: async (...a) => { log.executed.push(a); } },
     window: {
+      terminals: [],
+      createTreeView: (id,options)=>{log.providers.set(id,options.treeDataProvider);return {visible:false,reveal:async()=>{},onDidChangeVisibility:()=>({dispose(){}}),dispose(){}};},
       activeTerminal: undefined,
       onDidChangeActiveTerminal: fn => { log.activeTerminalChanged=fn; return { dispose() {} }; },
       registerWebviewViewProvider: (id, provider) => { log.providers.set(id, provider); return { dispose() {} }; },
@@ -131,7 +135,8 @@ async function openSidebar(env) {
 test('activate registers every contributed command and the view provider', async t => {
   const env = await start(t);
   const contributed = manifest.contributes.commands.map(c => c.command).sort();
-  assert.deepEqual([...env.log.commands.keys()].sort(), contributed);
+  assert.deepEqual([...env.log.commands.keys()].sort(), [...contributed,'agentGlue.focusSelectorTerminal'].sort());
+  assert.ok(env.log.providers.has('agentGlue.terminalSelector'));
   assert.ok(env.log.providers.has(manifest.contributes.views.agentGlue[0].id));
   assert.ok(manifest.activationEvents.includes('onStartupFinished'));
   assert.deepEqual(env.log.executed.filter(c=>c[0]!=='setContext'), [['agentGlue.companion.focus', { preserveFocus: true }]]);
@@ -543,7 +548,7 @@ test('native view title commands switch resource tabs and expose file actions in
   resources.list=async()=>({root:'/synthetic',items:[]});t.after(()=>{resources.list=original;});
   const env=await start(t);const view=await openSidebar(env);
   const menu=manifest.contributes.menus['view/title'];
-  assert.deepEqual(menu.filter(m=>m.group.startsWith('navigation')).map(m=>m.command),['agentGlue.showfiles','agentGlue.showprs','agentGlue.refreshResources','agentGlue.showtasks']);
+  assert.deepEqual(menu.filter(m=>m.when!=='view == terminal'&&m.group.startsWith('navigation')).map(m=>m.command),['agentGlue.showfiles','agentGlue.showprs','agentGlue.refreshResources','agentGlue.showtasks']);
   for(const tab of ['prs','files']){
     assert.ok(menu.some(m=>m.command==='agentGlue.show'+tab&&m.group.startsWith('navigation')));
     await env.log.commands.get('agentGlue.show'+tab)();await settle(view);

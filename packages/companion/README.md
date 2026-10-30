@@ -221,3 +221,20 @@ without fresh evidence they turn grey. Ordinary polling uses no AI tokens.
 This is not a live monitor of unselected panes. Use Terminal Status to refresh
 saved reports. The native UI limits badges to two characters; full elapsed time
 and helper details are supplied in the decoration tooltip where VS Code shows it.
+
+## Terminal selector layout prototype
+
+Run **Agent Glue: Try Terminal Selector Beside Terminals** (also available as a
+list button in the Terminal toolbar). This moves a compact selector into the
+Terminal view container. With the panel at the bottom, VS Code lays its views out
+side by side; a side-positioned panel stacks them instead. Adjust the divider to
+try the layout. Clicking a name focuses that exact existing native terminal.
+Terminal names and running processes are unchanged, and the built-in tab list
+remains available. The selector follows open/close/selection events without
+polling or reading terminal output.
+
+This is a layout prototype: activity statuses, timers and helper counts are not
+connected. The selected indicator means selection only. Placement uses VS Code's
+workbench `vscode.moveViews` command and needs desktop acceptance testing. Use
+**Agent Glue: Move Terminal Selector Back** to return it to its separate panel;
+the selector view can also be hidden through its view menu.

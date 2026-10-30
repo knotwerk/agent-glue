@@ -14,6 +14,7 @@ const {renderSidebar,renderDraft}=require('./views.cjs');
 const {openPreview}=require('./preview.cjs');
 function activate(context){
   if(!vscode.workspace.isTrusted)return;
+  if(vscode.window.createTreeView)require('./terminal-selector.cjs').registerSelector(vscode,context);
   const views=new Set(),panels=new Map(),uploads=new core.Uploads();
   const browserLinks=new BrowserLinks({mermaidPath:path.join(context.extensionPath,'dist/mermaid.js')});
   context.subscriptions.push(browserLinks);

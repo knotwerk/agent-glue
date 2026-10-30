@@ -77,7 +77,7 @@ function manifests() {
   // Companion: entry source, contributed commands/views registered in the host, assets present.
   const entry = path.join(packages.companion.dir, 'src/extension.cjs');
   if (!fs.existsSync(entry)) { fail('packages/companion/src/extension.cjs is missing'); return; }
-  const host = read(entry);
+  const host = read(entry) + read(path.join(packages.companion.dir, 'src/terminal-selector.cjs'));
   for (const { command } of all.companion.contributes.commands) {
     if (!host.includes(`'${command}'`) && !host.includes(`"${command}"`)) fail(`companion host does not register ${command}`);
   }
