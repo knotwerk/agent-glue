@@ -14,7 +14,8 @@ test('events distinguish work, permission, completion, interruption and stale/mi
  const events=[record('UserPromptSubmit',1000),record('PermissionRequest',2000)];
  assert.equal(summarize(events,session,3000).status,'blocked');events.push(record('PostToolUse',4000));
  assert.equal(summarize(events,session,5000).status,'active');events.push(record('Stop',6000));
- assert.equal(summarize(events,session,7000).status,'done');assert.equal(summarize(events,session,1000000).status,'unknown');
+ assert.equal(summarize(events,session,7000).status,'done');assert.equal(summarize(events,session,1000000).status,'done');
+ assert.equal(summarize([record('PreToolUse',4000)],session,1000000).status,'unknown');
  assert.equal(summarize(events,{...session,created:'6'},7000).status,'unknown');
  events.push(record('Interrupt',8000));assert.equal(summarize(events,session,9000).status,'idle');
 });

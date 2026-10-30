@@ -3,9 +3,9 @@ const fs=require('node:fs/promises'),path=require('node:path');
 const {EVENTS,root,key}=require('./lifecycle-hook.cjs');
 function summarize(events,session,now=Date.now()){
  const valid=events.filter(e=>EVENTS.includes(e.event)&&e.server===String(session.serverPid)&&e.pane===session.pane&&e.created===String(session.created)&&Number.isFinite(e.at)&&e.at<=now+1000).sort((a,b)=>a.at-b.at);
- const latest=valid.at(-1);if(!latest)return {status:'unknown',label:'No lifecycle events yet'};
+ const latest=valid.at(-1);if(!latest)return {status:'unknown',label:'No lifecycle events yet. In Codex, check /hooks trust; existing CLI sessions may need their hooks reloaded.'};
  const current=valid.filter(e=>e.session===latest.session);
- if(now-latest.at>15*60*1000)return {status:'unknown',label:'Last event over 15 minutes ago',at:latest.at};
+ if(now-latest.at>15*60*1000&&!['Stop','SessionStart','Interrupt','SessionEnd'].includes(latest.event))return {status:'unknown',label:'No recent update; last working/waiting event over 15 minutes ago',at:latest.at};
  let status=({SessionStart:'idle',UserPromptSubmit:'active',PreToolUse:'active',PostToolUse:'active',PermissionRequest:'blocked',Notification:'blocked',Stop:'done',Interrupt:'idle',SessionEnd:'unknown'})[latest.event];
  const prompt=current.find(e=>e.event==='UserPromptSubmit'&&e.at<=latest.at);
  return {status,label:({active:'Working',blocked:'Waiting for you',done:'Turn finished',idle:'Idle',unknown:'Session ended'})[status],at:latest.at,since:prompt?.at||latest.at,event:latest.event};
@@ -20,7 +20,7 @@ class Lifecycle{
    }));rows.set(session.sessionName,summarize(events.filter(Boolean),session));
   }));this.rows=rows;
  }
- get(session){return this.rows.get(session)||{status:'unknown',label:'No lifecycle events yet'};}
+ get(session){return this.rows.get(session)||{status:'unknown',label:'No lifecycle events yet. In Codex, check /hooks trust; existing CLI sessions may need their hooks reloaded.'};}
 }
 const profiles=['claude','claude2','claudel','claudelp','codex','codex2','codex3','codexl'];
 function mergeHooks(config,command,claude){

@@ -87,7 +87,7 @@ on macOS, dictation and clipboard images.
   **Enable Live Terminal Status** installs local observer hooks for existing standard
   Claude/Codex account directories. Codex requires `/hooks` trust review; existing
   CLI sessions may need to reload their hook configuration. No agents are restarted.
-  Missing events and events older than 15 minutes show unknown. This uses no AI calls
+  Missing events and working/waiting updates older than 15 minutes show unknown. Confirmed finished turns keep their timestamped completion state. This uses no AI calls
   or conversation-history indexing. Moving the selector back restores the previous
   native-tabs setting.
 - **See what this terminal is doing.** The sidebar title follows the selected CLI,
