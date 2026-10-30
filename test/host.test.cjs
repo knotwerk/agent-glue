@@ -215,8 +215,8 @@ test('upload failures report an error and release the transfer', async t => {
   // The identity is free again, so a retry may start.
   view.webview.send({ type: 'uploadStart', id: 'bad-1', name: 'f', size: 3 });
   await waitFor(view, () => view.webview.posted.filter(x => x.type === 'uploadReady').length === 2, 'second uploadReady');
-  view.webview.send({ type: 'uploadStart', id: 'huge', name: 'f', size: 26 * 1024 * 1024 });
-  assert.match((await waitFor(view, m => m.type === 'uploadError' && m.id === 'huge', 'size error')).error, /25 MB/);
+  view.webview.send({ type: 'uploadStart', id: 'huge', name: 'f', size: 200 * 1024 * 1024 + 1 });
+  assert.match((await waitFor(view, m => m.type === 'uploadError' && m.id === 'huge', 'size error')).error, /200 MB/);
 });
 
 test('uploads are refused when the project does not ignore .local', async t => {
@@ -748,16 +748,16 @@ test('large HTML reports are discovered and previewed; oversized preview errors 
   const env=await start(t,{capture:'data/explorer/review-v2.html'});
   const file=path.join(env.project,'data/explorer/review-v2.html');
   fs.mkdirSync(path.dirname(file),{recursive:true});
-  fs.writeFileSync(file,'<!doctype html><h1>Review two</h1><!--'+'x'.repeat(5551391)+'-->');
+  fs.writeFileSync(file,'<!doctype html><h1>Review two</h1><!--'+'x'.repeat(26*1024*1024)+'-->');
   const view=await openSidebar(env);await settle(view);
   const item=lastState(view).files.find(f=>f.path===file);assert.ok(item);
   await view.webview.send({type:'previewFile',id:item.id});await settle(view);
   assert.equal(env.log.panels.length,1);assert.match(env.log.panels[0].webview.html,/Review two/);
   assert.deepEqual(env.log.errors,[]);
   env.log.panels[0].dispose();
-  fs.truncateSync(file,25*1024*1024+1);
+  fs.truncateSync(file,200*1024*1024+1);
   await view.webview.send({type:'previewFile',id:item.id});await settle(view);
-  assert.match(env.log.errors.at(-1),/Preview limit is 25 MB/);
+  assert.match(env.log.errors.at(-1),/Preview limit is 200 MB/);
 });
 
 test('both download gestures send the selected file URI to the native helper without browser links',async t=>{
@@ -974,7 +974,7 @@ test('path uploads use the local helper and attach remote bytes while retaining 
  const env=await start(t);const view=await openSidebar(env);await settle(view);
  const bytes=Buffer.from('<html>local review</html>'),execute=env.vscode.commands.executeCommand;
  env.vscode.commands.executeCommand=async(cmd,...args)=>{
-  if(cmd==='agentGlueMac.status')return {platform:'linux',safeNativeErrors:true,localFiles:true};
+  if(cmd==='agentGlueMac.status')return {platform:'linux',safeNativeErrors:true,localFiles:true,maxFileBytes:200*1024*1024};
   if(cmd==='agentGlueMac.readLocalFile'){assert.equal(args[0],'/Users/example/review.html');env.vscode.window.activeTerminal={name:'unrelated'};env.log.activeTerminalChanged(env.vscode.window.activeTerminal);return {name:'review.html',data:bytes.toString('base64'),size:bytes.length};}
   return execute(cmd,...args);
  };
@@ -984,7 +984,7 @@ test('path uploads use the local helper and attach remote bytes while retaining 
  assert.deepEqual(fs.readFileSync(attached.path),bytes);
  await view.send({type:'importLocalFiles',paths:['/Users/example/review.html'],targetId:'different-session'});
  assert.equal(lastState(view).draft.attachments.length,1);assert.match(lastState(view).status,/recipient changed/);
- env.vscode.commands.executeCommand=async(cmd,...args)=>{if(cmd==='agentGlueMac.readLocalFile')throw Error('ENOENT: no local file');if(cmd==='agentGlueMac.status')return {platform:'linux',localFiles:true};return execute(cmd,...args);};
+ env.vscode.commands.executeCommand=async(cmd,...args)=>{if(cmd==='agentGlueMac.readLocalFile')throw Error('ENOENT: no local file');if(cmd==='agentGlueMac.status')return {platform:'linux',localFiles:true,maxFileBytes:200*1024*1024};return execute(cmd,...args);};
  await view.send({type:'importLocalFiles',paths:[path.join(env.project,'notes.html')],targetId:'$1'});
  assert.equal(lastState(view).draft.attachments.at(-1).path,path.join(env.project,'notes.html'),'existing remote paths remain usable');
 });
@@ -1016,3 +1016,17 @@ test('retrying a missing upload folder preserves a manually chosen recipient',as
  fail=false;await env.log.commands.get('agentGlue.refreshResources')();await settle(view);
  assert.equal(lastState(view).draft.targetId,'$2');assert.equal(lastState(view).draft.root,env.project);
 });
+
+ test('fork picker hands off to a different profile and cancels without launching',async t=>{
+ const forks=[];const env=await start(t,{sessionsApi:{handoffProfiles:['claude','codex2'],sessionForTerminal:()=>undefined,forkSession:async(...args)=>forks.push(args)}});
+ await openSidebar(env);env.vscode.window.activeTerminal={name:'Fix bug'};
+ let accept,hide;env.vscode.ThemeIcon=class{};
+ env.vscode.window.createInputBox=()=>({onDidHide:fn=>{hide=fn;},onDidTriggerButton(){},onDidAccept:fn=>{accept=fn;},show(){},dispose(){hide?.();},value:env.project});
+ let choose='codex2';env.vscode.window.showQuickPick=async items=>items.find(i=>i.profile===choose);
+ env.vscode.window.showInputBox=async()=> 'Model: Example model';
+ let run=env.log.commands.get('agentGlue.fork')();await new Promise(r=>setImmediate(r));await accept();await run;
+ assert.equal(forks.length,1);assert.equal(forks[0][2].profile,'codex2');assert.equal(forks[0][2].status,'Model: Example model');
+ choose=undefined;run=env.log.commands.get('agentGlue.fork')();await new Promise(r=>setImmediate(r));await accept();await run;assert.equal(forks.length,1);
+ choose='codex2';env.vscode.window.showInputBox=async()=>undefined;run=env.log.commands.get('agentGlue.fork')();await new Promise(r=>setImmediate(r));await accept();await run;assert.equal(forks.length,1);
+ choose='claude';env.vscode.window.showInputBox=async()=>{throw Error('Same account must not request handoff details');};run=env.log.commands.get('agentGlue.fork')();await new Promise(r=>setImmediate(r));await accept();await run;assert.equal(forks.length,2);assert.equal(forks[1][2],undefined);
+ });

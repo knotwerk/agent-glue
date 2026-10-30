@@ -63,3 +63,32 @@ test('an immediately failing CLI leaves the new shell available before tmux labe
  assert.match(output.stdout,/status 23/);
  assert.equal(h.terminals.length,1);assert.equal(h.terminals[0].shown,true);
 });
+
+for(const [sourceProgram,targetProgram] of [['claude','codex2'],['codex','claudel'],['claude','claude2']]){
+ test(`handoff ${sourceProgram} to ${targetProgram} starts one fresh conversation with private context`,async()=>{
+  const h=fixture(sourceProgram);let note;
+  h.deps.writeHandoff=async(directory,text)=>{note=text;return "/private/handoff's note.txt";};
+  const result=await forkSession(h.source,'/other',h.deps,{profile:targetProgram,status:'Model: Example model',tasks:'Fix the report'});
+  assert.equal(h.terminals.length,1);assert.ok(result.session.startsWith(targetProgram+'-Example-'));
+  assert.match(note,/NEW conversation/);assert.ok(note.includes(parent));assert.match(note,/Model: Example model/);assert.match(note,/Fix the report/);assert.match(note,/~\/.zshrc/);
+  const launch=h.calls.find(c=>c.args[0]==='new-session').args.at(-1);
+  assert.ok(launch.includes(profile(targetProgram).home));assert.ok(launch.includes('handoff'));assert.ok(!launch.includes('--resume'));assert.ok(!launch.includes('--fork-session'));
+  assert.ok(!launch.includes('Example model'),'private status is not placed in process arguments');
+  assert.ok(h.calls.every(c=>!['send-keys','capture-pane','kill-session'].includes(c.args[0])));
+  assert.equal(h.calls.filter(c=>c.cmd==='codex'&&!c.args.includes('--help')).length,0,'no headless fork call for a fresh handoff');
+  if(targetProgram.startsWith('codex'))assert.equal(result.threadId,undefined,'never fabricate a Codex resume identity');
+ });
+}
+test('handoffs tolerate unavailable source identity but reject invalid target and oversize notes',async()=>{
+ const h=fixture();h.deps.resolve=async()=>{throw Error('not yet saved');};let note;
+ h.deps.writeHandoff=async(dir,text)=>{note=text;return '/private/handoff.txt';};
+ await forkSession(h.source,'/other',h.deps,{profile:'codex',status:'',tasks:''});assert.match(note,/Unknown/);
+ const invalid=fixture();await assert.rejects(forkSession(invalid.source,'/other',invalid.deps,{profile:'sh; bad',status:'',tasks:''}),/Unsupported/);
+ await assert.rejects(forkSession(invalid.source,'/other',invalid.deps,{profile:'codex',status:'x'.repeat(16001),tasks:''}),/too long/);assert.equal(invalid.terminals.length,0);
+});
+test('handoff notes are private unique files outside the project',async()=>{
+ const {saveHandoff}=require('../fork.cjs'),fs=require('node:fs/promises');
+ const {tempDir}=require('../../../test/support/tmp.cjs');const dir=tempDir('handoff-private');
+ const a=await saveHandoff(dir,'Synthetic context'),b=await saveHandoff(dir,'Other context');
+ assert.notEqual(a,b);assert.equal(await fs.readFile(a,'utf8'),'Synthetic context');assert.equal((await fs.stat(a)).mode&0o777,0o600);
+});

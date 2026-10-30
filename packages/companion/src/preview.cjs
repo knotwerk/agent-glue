@@ -30,7 +30,7 @@ async function documentHtml(file,root,mermaidSource='',navigation) {
   if(!supported(file))throw new Error('Choose a Markdown or HTML document.');
   const documentStat=await fs.stat(file);
   if(!documentStat.isFile())throw new Error('Preview requires a regular file.');
-  if(documentStat.size>25*1024*1024)throw new Error('Preview limit is 25 MB. Download the file to open it locally.');
+  if(documentStat.size>200*1024*1024)throw new Error('Preview limit is 200 MB. Download the file to open it locally.');
   const source=await fs.readFile(file,'utf8');
   const markdown=/\.(md|markdown)$/i.test(file);
   // Only a host caller may select PR-body repository-relative resolution.

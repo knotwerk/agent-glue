@@ -508,8 +508,8 @@ function activate(context) {
         void schedule('attachPoll', () => attachSessions({ quiet: true }));
     }, ATTACH_POLL_INTERVAL_MS);
     context.subscriptions.push({ dispose: () => clearInterval(attachPoll) });
-    return { forkSession: (source,destination) => {
-        const result=operationQueue.catch(()=>{}).then(()=>require('./fork.cjs').forkSession(source,destination,{exec:execFileAsync,createTerminal:options=>vscode.window.createTerminal(options),register:(session,terminal)=>{terminalSessions.set(terminal,session);addSessionTerminal(session,terminal);}}));
+    return { handoffProfiles: [...AGENT_PROGRAMS], forkSession: (source,destination,options) => {
+        const result=operationQueue.catch(()=>{}).then(()=>require('./fork.cjs').forkSession(source,destination,{exec:execFileAsync,createTerminal:options=>vscode.window.createTerminal(options),register:(session,terminal)=>{terminalSessions.set(terminal,session);addSessionTerminal(session,terminal);},handoffDirectory:path.join(context.globalStorageUri.fsPath,'handoffs')},options));
         operationQueue=result.catch(error=>warn('fork',error));return result;
     }, terminalForSession: session => [...(sessionTerminals.get(session) || [])].find(t => vscode.window.terminals.includes(t)), sessionForTerminal: terminal => terminalSessions.get(terminal), refresh: () => schedule('apiRefresh', () => attachSessions({ quiet: true })) };
 }

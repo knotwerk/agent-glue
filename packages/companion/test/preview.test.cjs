@@ -125,12 +125,12 @@ test('documentHtml refuses files outside the project, symlink escapes and unsupp
   assert.match(await render(p, 'ok.md'), /ok/);
 });
 
-test('documentHtml enforces the 25 MB preview limit', async () => {
+test('documentHtml enforces the 200 MB preview limit', async () => {
   const p = project({ 'ok.md': 'x' });
   const big = path.join(p.root, 'big.md');
   fs.writeFileSync(big, '');
-  fs.truncateSync(big, 25 * 1024 * 1024 + 1);
-  await assert.rejects(preview.documentHtml(big, p.root), /25 MB/);
+  fs.truncateSync(big, 200 * 1024 * 1024 + 1);
+  await assert.rejects(preview.documentHtml(big, p.root), /200 MB/);
 });
 
 test('mermaid fences render as inert escaped blocks', async () => {

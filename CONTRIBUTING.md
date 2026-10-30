@@ -108,7 +108,7 @@ versions, VSIX versions and failures in ignored development output.
   Unchanged polling must preserve keyboard focus; opening HTML must keep its row.
 - Open Markdown with a local image, Mermaid and a table, then interactive HTML.
   Verify main-editor placement, document links and anchors. Outside-root assets
-  and remote subresources must stay blocked. Documents over 25 MB must fail clearly.
+  and remote subresources must stay blocked. Documents over 200 MB must fail clearly.
 - Download through the native Save dialog, cancel it, and check byte-for-byte
   contents. Native downloads must work without ZeroTier. Test optional browser
   links separately on a private ZeroTier network.

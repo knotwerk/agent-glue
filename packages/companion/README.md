@@ -20,16 +20,22 @@ See the [setup guide](https://github.com/knotwerk/agent-glue#readme).
   panel. Mermaid diagrams render in Markdown. Project-local document links and anchors work; remote content is
   blocked, and only project-local PNG/JPEG/GIF/WebP images (up to 5 MB) appear.
 - **Fork Conversation**: right-click a terminal tab, then confirm or browse to
-  its destination folder. Requires Sessions and a discoverable conversation with
-  native CLI fork support. The original stays running; project files are not copied.
+  its destination folder and choose a CLI/account. **Same CLI / account** uses
+  native fork support and requires an identifiable saved conversation. Choosing
+  another supported account starts a fresh chat with source metadata, profile
+  mappings and saved task status. Optionally paste `/status` output or a short
+  handoff note. Escape cancels; blank Enter skips the optional note. Requires
+  Sessions. The original stays running; project files and chat histories are not
+  copied between accounts.
 - **Web apps**: a single collapsed line above Files shows active counts for
   this terminal and all terminals. Expand to see filenames or page paths beside
   links; use **All** for the cross-terminal list. Links use VS Code SSH forwarding. Right-click for browser
   and copy-link actions.
 - **Attachments**: drop files (including HTML), paste screenshots, or paste
-  absolute local file paths into the note (up to 25 MB per upload). Path-only
+  absolute local file paths into the note (up to 200 MB per file upload). Path-only
   drops and pasted paths use the local helper to copy files to the SSH host.
-  Quoted paths with spaces and file URLs are supported. They are
+  Quoted paths with spaces and file URLs are supported. Markdown and HTML previews also support files up to 200 MB.
+  Clipboard images retain a separate 25 MB limit. They are
   stored in the Git-ignored `.local/agent-glue/inbox/` of the agent's project,
   and their paths are added to your draft.
 - **Draft and dictation**: write a note (macOS Dictation works in the field),

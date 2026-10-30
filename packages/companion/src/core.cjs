@@ -4,7 +4,7 @@ const fs = require('node:fs/promises');
 const crypto = require('node:crypto');
 const { execFile } = require('node:child_process');
 const run = require('node:util').promisify(execFile);
-const MAX_BYTES = 25 * 1024 * 1024;
+const MAX_BYTES = 200 * 1024 * 1024;
 const supported = p => /\.(md|markdown|html?)$/i.test(p);
 function parseSessions(output) {
   return output.trim().split('\n').filter(Boolean).map(line => {
@@ -122,7 +122,7 @@ class Uploads {
   }
   async begin(message,root,targetId) {
     if (!/^[a-zA-Z0-9-]{1,80}$/.test(message.id) || this.active.has(message.id)) throw new Error('Invalid upload identity.');
-    if (!Number.isSafeInteger(message.size)||message.size<0||message.size>MAX_BYTES) throw new Error('Files must be 25 MB or smaller.');
+    if (!Number.isSafeInteger(message.size)||message.size<0||message.size>MAX_BYTES) throw new Error('Files must be 200 MB or smaller.');
     const inbox=path.join(root,'.local/agent-glue/inbox');
     // Require ignore coverage before storing any attachment.
     await this.exec('git',['-c','core.fsmonitor=false','-C',root,'check-ignore','-q','--','.local/agent-glue/inbox/probe']).catch(()=>{throw new Error('Ignore .local/agent-glue/ in this project before uploading.');});

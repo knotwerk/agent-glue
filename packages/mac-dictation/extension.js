@@ -85,7 +85,7 @@ async function readLocalFile(value){
   const handle=await fs.open(file,constants.O_RDONLY|constants.O_NONBLOCK);
   try{
     const stat=await handle.stat();if(!stat.isFile())throw Error('Choose a file, not a folder.');
-    if(stat.size>25*1024*1024)throw Error('Files must be 25 MB or smaller.');
+    if(stat.size>200*1024*1024)throw Error('Files must be 200 MB or smaller.');
     const buffer=Buffer.alloc(stat.size+1);let offset=0;
     while(offset<buffer.length){const {bytesRead}=await handle.read(buffer,offset,buffer.length-offset,offset);if(!bytesRead)break;offset+=bytesRead;}
     if(offset!==stat.size)throw Error('The file changed while uploading. Try again.');
@@ -94,7 +94,7 @@ async function readLocalFile(value){
 }
 function activate(context){
   const vscode=require('vscode');
-  context.subscriptions.push(vscode.commands.registerCommand('agentGlueMac.status',()=>({platform:process.platform,version:require('./package.json').version,clipboardImage:true,safeNativeErrors:true,nativeDownload:true,localFiles:true})));
+  context.subscriptions.push(vscode.commands.registerCommand('agentGlueMac.status',()=>({platform:process.platform,version:require('./package.json').version,clipboardImage:true,safeNativeErrors:true,nativeDownload:true,localFiles:true,maxFileBytes:200*1024*1024})));
   context.subscriptions.push(vscode.commands.registerCommand('agentGlueMac.readLocalFile',value=>readLocalFile(value)));
   context.subscriptions.push(vscode.commands.registerCommand('agentGlueMac.downloadFile',source=>downloadFile(vscode,source)));
   context.subscriptions.push(vscode.commands.registerCommand('agentGlueMac.readClipboardImage',()=>readClipboardImage()));

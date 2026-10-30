@@ -219,12 +219,12 @@ test('Uploads rejects invalid or duplicate upload identities', async () => {
   await uploads.close();
 });
 
-test('Uploads enforces the 25 MB size limit and integer sizes', async () => {
+test('Uploads enforces the 200 MB size limit and integer sizes', async () => {
   const root = gitProject('upload-size');
   const uploads = new core.Uploads();
-  const limit = 25 * 1024 * 1024;
+  const limit = 200 * 1024 * 1024;
   for (const size of [limit + 1, -1, 1.5, NaN, Infinity, '10', null, undefined]) {
-    await assert.rejects(uploads.start({ id: 'big', name: 'f', size }, root, 't'), /25 MB/, String(size));
+    await assert.rejects(uploads.start({ id: 'big', name: 'f', size }, root, 't'), /200 MB/, String(size));
   }
   assert.equal(fs.existsSync(path.join(root, '.local')), false, 'rejected sizes must not touch the filesystem');
   await uploads.start({ id: 'exact', name: 'f', size: limit }, root, 't');

@@ -28,7 +28,7 @@
   let queue = Promise.resolve();
   const waits = new Map();
   const localUploads = new Map();
-  const MAX_BYTES = 25 * 1024 * 1024;
+  const MAX_BYTES = 200 * 1024 * 1024;
   const CHUNK_BYTES = 192 * 1024;
   const pinSvg = '<svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.2" aria-hidden="true"><path d="m6 2 6 6-2 1-1 3-2-2-4 4 3-5-2-2 3-1z"/></svg>';
 
@@ -557,7 +557,7 @@
     const targetId=targetSelect.value||state.draft?.targetId,batchId=crypto.randomUUID(),batch=[];
     for (const file of files) {
       if (file.size > MAX_BYTES) {
-        showError(`${file.name}: files must be 25 MB or smaller.`);
+        showError(`${file.name}: files must be 200 MB or smaller.`);
         continue;
       }
       const id = crypto.randomUUID();

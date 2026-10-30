@@ -62,8 +62,10 @@ test('local file uploads read HTML and file URLs byte-for-byte and reject folder
  for(const source of [file,require('node:url').pathToFileURL(file).href]){
   const result=await readLocalFile(source);assert.equal(result.name,'review two.html');assert.equal(result.size,bytes.length);assert.deepEqual(Buffer.from(result.data,'base64'),bytes);
  }
+ const aboveOldLimit=path.join(dir,'report.html');await fs.writeFile(aboveOldLimit,'');await fs.truncate(aboveOldLimit,26*1024*1024);
+ const report=await readLocalFile(aboveOldLimit);assert.equal(report.size,26*1024*1024);assert.equal(Buffer.from(report.data,'base64').length,report.size);
  await assert.rejects(readLocalFile(dir),/not a folder/);
  await assert.rejects(readLocalFile('relative.html'),/absolute path/);
  await assert.rejects(readLocalFile('https://example.com/file.html'),/absolute path/);
- const large=path.join(dir,'large.html');await fs.writeFile(large,'');await fs.truncate(large,25*1024*1024+1);await assert.rejects(readLocalFile(large),/25 MB/);
+ const large=path.join(dir,'large.html');await fs.writeFile(large,'');await fs.truncate(large,200*1024*1024+1);await assert.rejects(readLocalFile(large),/200 MB/);
 });

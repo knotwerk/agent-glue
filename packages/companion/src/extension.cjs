@@ -40,6 +40,7 @@ function activate(context){
       if(!info)return false;
       if(!['nativeDownload','localFiles'].includes(capability)&&info.platform!=='darwin')throw new Error('Dictation helper is running on the wrong host; it must run locally on the Mac.');
       if(info.version&&info.safeNativeErrors!==true)return false;
+      if(capability==='localFiles'&&!(info.maxFileBytes>=200*1024*1024))return false;
       return !capability||info[capability]===true;
     }catch(error){
       if(/command.*(not found|not registered)/i.test(error.message))return false;
@@ -123,7 +124,7 @@ function activate(context){
           if(!remote?.isFile())throw error;
           draft.attachments.push({name:path.basename(localPath),path:localPath,size:remote.size,targetId});await save();publish();continue;
         }
-        if(!file||typeof file.data!=='string'||!Number.isSafeInteger(file.size)||file.size<0||file.size>25*1024*1024||file.data.length>36*1024*1024)throw Error('The local helper did not return a valid file. Reload and retry.');
+        if(!file||typeof file.data!=='string'||!Number.isSafeInteger(file.size)||file.size<0||file.size>200*1024*1024||file.data.length>4*Math.ceil(200*1024*1024/3))throw Error('The local helper did not return a valid file. Reload and retry.');
         const bytes=Buffer.from(file.data,'base64');if(bytes.length!==file.size||bytes.toString('base64')!==file.data)throw Error('The local file transfer was incomplete. Try again.');
         const id=crypto.randomUUID();
         try{
@@ -178,7 +179,24 @@ function activate(context){
         input.onDidTriggerButton(async()=>{browsing=true;try{const picked=await vscode.window.showOpenDialog({canSelectFolders:true,canSelectFiles:false,canSelectMany:false,defaultUri:vscode.Uri.file(input.value)});if(picked?.[0])input.value=picked[0].fsPath;}finally{browsing=false;if(!done)input.show();}});
         input.onDidAccept(async()=>{try{const folder=path.resolve(source.cwd,input.value.replace(/^~(?=\/|$)/,require('node:os').homedir()));if(!(await fs.stat(folder)).isDirectory())throw Error();finish(folder);}catch{input.validationMessage='Choose an existing folder on the workspace host.';}});input.show();
       });
-      if(folder)await link.forkSession({...source},folder);
+      if(!folder)return;
+      let options;
+      if(Array.isArray(link.handoffProfiles)){
+        const choice=await vscode.window.showQuickPick([
+          {label:'Same CLI / account',description:source.profile+' · native conversation fork',profile:source.profile},
+          ...link.handoffProfiles.filter(program=>program!==source.profile).map(program=>({label:program,description:'New conversation with a handoff note',profile:program}))
+        ],{title:'Continue with which CLI / account?',placeHolder:'Same account preserves history; another account receives source details and saved status'});
+        if(!choice)return;
+        if(choice.profile!==source.profile){
+          const details=await vscode.window.showInputBox({title:'Optional source status for '+choice.profile,prompt:'Paste /status output or a short handoff note. Enter to skip; Escape cancels. This is shared with the new agent.',value:'',validateInput:value=>value.length>16000?'Keep the handoff under 16,000 characters.':undefined});
+          if(details===undefined)return;
+          const runner=require('./status-runner.cjs');
+          const local=await resources.list('tasks',source.cwd,{session:source});
+          const tasks=runner.visible(runner.combine(statusReports[source.id],local.items));
+          options={profile:choice.profile,status:details,tasks:JSON.stringify(tasks).slice(0,24000)};
+        }
+      }
+      await link.forkSession({...source},folder,options);
     }finally{forkBusy=false;}
   }
   const cleared=new Set();

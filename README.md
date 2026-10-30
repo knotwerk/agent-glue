@@ -56,6 +56,11 @@ on macOS, dictation and clipboard images.
   Different folders do not copy project files or create Git worktrees. Forking
   needs a discoverable saved conversation and a CLI with native fork support;
   ambiguous identities fail explicitly rather than selecting another chat.
+  After choosing the folder, keep **Same CLI / account** for that native fork,
+  or choose another supported Claude/Codex account to start a fresh conversation.
+  The new agent receives source session details, profile-directory mappings and
+  saved task status, plus optional `/status` output you paste. This is a handoff,
+  not a conversion of chat history. The original terminal stays untouched.
 - **Open running apps.** Files includes a collapsed **Web apps** line with active
   counts for this terminal and all terminals. Expand it to see filenames or page
   paths beside links. Apps are discovered from terminal URLs and server processes. Click to open in VS Code's main editor; right-click for
@@ -86,7 +91,7 @@ on macOS, dictation and clipboard images.
   messaging the active conversation. Reports are timestamped snapshots;
   ordinary Refresh reads saved reports without contacting an AI.
 - **Send a clear note.** Write or dictate, attach a file or screenshot, then paste
-  into the selected terminal. Drop local files—including HTML—or paste absolute
+  into the selected terminal. Drop local files up to 200 MB—including HTML—or paste absolute
   local file paths, quoted paths with spaces, or file URLs. The local helper
   copies them to the remote project's Git-ignored `.local/agent-glue/inbox/`
   and attaches the remote paths. Uploads keep the chosen recipient throughout

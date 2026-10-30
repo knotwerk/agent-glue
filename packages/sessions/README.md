@@ -26,8 +26,19 @@ MIT licensed, free to reuse and modify.
 - Exposes a small API to **Agent Glue Companion** (find, focus and paste into a
   session's terminal, and fork a saved conversation). With Companion installed,
   right-click a terminal tab → **Agent Glue: Fork Conversation** and confirm
-  the destination folder. Native CLI fork support and an identifiable saved
-  conversation are required. Sessions works fine without Companion.
+  the destination folder, then choose a CLI/account. The same account uses a
+  native conversation fork and requires an identifiable saved conversation.
+  A different account starts a fresh conversation with a private handoff note
+  containing source metadata, saved task status and optional pasted `/status`
+  details. The note includes the known profile mappings and points to `~/.zshrc`
+  for custom mappings; shell startup files are not read or sourced. Handoff notes
+  stay in extension storage with owner-only file permissions. The new CLI receives
+  a request to read the note, acknowledge it and wait; this initial response may
+  use tokens. Login, model and MCP details are only included if you supply them,
+  and describe the source account. Agent Glue does not read credentials or copy
+  full chat histories.
+  Supported profiles use the documented configuration-directory conventions;
+  arbitrary aliases still require manual setup. Sessions works without Companion.
 - Does not support untrusted or virtual workspaces.
 
 If the original "Tmux Claude/Codex Attach" extension is installed, disable it
