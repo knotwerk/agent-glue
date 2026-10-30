@@ -7,7 +7,6 @@ const crypto=require('node:crypto');
 const core=require('./core.cjs');
 const {WebApps,appLabel}=require('./web-apps.cjs');
 const resources=require('./resources.cjs');
-const {Activity}=require('./activity.cjs');
 const {BrowserLinks}=require('./browser-links.cjs');
 const {openPullRequest,detail:reviewDetail,openReviewDocument}=require('./pull-request.cjs');
 const {renderSidebar,renderDraft}=require('./views.cjs');
@@ -17,7 +16,6 @@ function activate(context){
   const views=new Set(),panels=new Map(),uploads=new core.Uploads();
   const browserLinks=new BrowserLinks({mermaidPath:path.join(context.extensionPath,'dist/mermaid.js')});
   context.subscriptions.push(browserLinks);
-  const activity=new Activity(),activityReports={};
   const statusReports=context.workspaceState.get('statusReports',{});let statusRunBusy=false,statusRunSessionId;
   const apps=new WebApps(core.run);let appsPanel,appsSignature,forkBusy=false;
   let sidebar,sidebarWebview,draftPanel,draftWebview,sessionList=[],selected=context.workspaceState.get('selected'),files=context.workspaceState.get('files',{});
@@ -154,7 +152,7 @@ function activate(context){
       if(selected!==source.id||active!==vscode.window.activeTerminal||!sidebar?.visible)throw Error('Selected terminal changed. Run status again.');
       const previous={items:runner.combine(statusReports[source.id],local.items)};
       const report=await runner.summarize({...source},stdout,path.join(context.globalStorageUri.fsPath,'status-runs'),{previous});
-      statusReports[source.id]=report;activityReports[source.id]=report;
+      statusReports[source.id]=report;
       const oldest=Object.keys(statusReports).sort((a,b)=>statusReports[b].updatedAt.localeCompare(statusReports[a].updatedAt));for(const id of oldest.slice(100))delete statusReports[id];
       await context.workspaceState.update('statusReports',statusReports);
       status='Status updated for '+source.name+'.';
@@ -205,7 +203,7 @@ function activate(context){
   let queue=Promise.resolve();
   const byId=id=>sessionList.find(s=>s.id===id);
   const save=async()=>{await context.workspaceState.update('files',files);await context.workspaceState.update('draft',draft);await context.workspaceState.update('selected',selected);};
-  const state=()=>({activities:activity.list(sessionList,{...statusReports,...activityReports},{selected,visible:Boolean(sidebar?.visible)}),statusRunBusy,statusRunSessionId,webApps:apps.items.filter(item=>item.sessionId===selected).map(item=>({...item,label:appLabel(item.url)})),webAppsActiveTotal:apps.items.filter(item=>item.running).length,sessions:sessionList,selectedSessionId:selected,filesMessage:byId(selected)?`No existing files found in the recent terminal output for ${byId(selected).name}.`:'No matching agent session for the selected terminal. Select an attached agent terminal or use Choose Session in the view menu.',resourceTab,prFilter,prSort,prReadFilter,resourceItems:visibleResources(),resourceStatus,resourceGeneration,resourceFolder:resourceRoot||byId(selected)?.cwd||'',files:(files[selected]||[]).filter(f=>!f.hidden&&!f.missing),draft,status:status||connectionStatus});
+  const state=()=>({statusRunBusy,statusRunSessionId,webApps:apps.items.filter(item=>item.sessionId===selected).map(item=>({...item,label:appLabel(item.url)})),webAppsActiveTotal:apps.items.filter(item=>item.running).length,sessions:sessionList,selectedSessionId:selected,filesMessage:byId(selected)?`No existing files found in the recent terminal output for ${byId(selected).name}.`:'No matching agent session for the selected terminal. Select an attached agent terminal or use Choose Session in the view menu.',resourceTab,prFilter,prSort,prReadFilter,resourceItems:visibleResources(),resourceStatus,resourceGeneration,resourceFolder:resourceRoot||byId(selected)?.cwd||'',files:(files[selected]||[]).filter(f=>!f.hidden&&!f.missing),draft,status:status||connectionStatus});
   const post=(view,message)=>{try{void Promise.resolve(view.postMessage(message)).catch(()=>views.delete(view));}catch{views.delete(view);}};
   const publish=()=>{if(sidebar)sidebar.title=byId(selected)?'AG - '+byId(selected).profile:'AG';for(const view of views)post(view,{type:'state',state:state()});};
   function loadResources(force=false){
@@ -224,7 +222,7 @@ function activate(context){
     void resources.list(resourceTab,cwd,{filter:prFilter,session:byId(selected)}).then(result=>{
       if(generation!==resourceGeneration)return;
       resourceRoot=result.root;
-      if(resourceTab==='tasks'){const {combine,visible}=require('./status-runner.cjs');const combined=combine(statusReports[selected],result.items);activityReports[selected]={items:combined};result={...result,items:visible(combined)};}
+      if(resourceTab==='tasks'){const {combine,visible}=require('./status-runner.cjs');const combined=combine(statusReports[selected],result.items);result={...result,items:visible(combined)};}
       resourceItems=result.items.map(item=>({...item,newComments:item.commentAt&&item.commentAt>(prSeen[item.id]||new Date(Date.now()-7*86400000).toISOString())}));
       if(resourceTab==='prs')resourceItems=resources.sortItems(resourceItems,prSort);
       resourceStatus=result.warning||'';publish();
@@ -256,7 +254,6 @@ function activate(context){
       if(session&&sidebar?.visible&&!cleared.has(selected)){
         const {stdout}=await core.run('tmux',['capture-pane','-p','-J','-t',session.pane,'-S','-2000'],{maxBuffer:1024*1024});
         if(vscode.window.activeTerminal!==activeTerminal){refreshAgain=true;return;}
-        activity.observe(session.id,stdout);
         apps.observe(session,stdout);
         const existing=await core.discoverReferences(stdout,session.cwd,{projectRoot:core.project});
         if(vscode.window.activeTerminal!==activeTerminal){refreshAgain=true;return;}
@@ -432,7 +429,6 @@ function activate(context){
         if(selected){files[selected]=(files[selected]||[]).filter(file=>file.pinned);cleared.add(selected);}
         break;
       case 'pinFile':await vscode.commands.executeCommand('agentGlue.pin');break;
-      case 'focusActivity':{if(byId(message.id)){const target=await terminal(message.id);target.show();await refresh();}break;}
       case 'selectSession':{
         if(!byId(message.id))throw new Error('Session is no longer available.');
         selected=message.id;followTarget=true;(await terminal(selected)).show();await refresh();break;

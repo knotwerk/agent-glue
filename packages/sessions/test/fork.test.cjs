@@ -19,7 +19,7 @@ function fixture(program='claude'){
 }
 test('Claude creates one independently identified fork without typing in original pane',async()=>{
  const h=fixture();const result=await forkSession(h.source,"/different folder's path",h.deps);
- assert.equal(h.terminals.length,1);assert.equal(h.terminals[0].cwd,"/different folder's path");assert.equal(h.terminals[0].registered,result.session);assert.equal(h.terminals[0].shown,true);
+ assert.equal(h.terminals.length,1);assert.equal(h.terminals[0].cwd,"/different folder's path");assert.equal(h.terminals[0].registered,result.session);assert.equal(h.terminals[0].shown,true);assert.equal(h.terminals[0].strictEnv,true);assert.equal(h.terminals[0].env.PATH,process.env.PATH);
  const launch=h.calls.find(c=>c.args[0]==='new-session');assert.ok(launch.args.at(-1).includes('--fork-session'));assert.ok(launch.args.at(-1).includes(parent));assert.notEqual(result.threadId,parent);
  assert.ok(h.calls.every(c=>!['send-keys','kill-session','kill-pane'].includes(c.args[0])));
 });
@@ -61,7 +61,7 @@ test('an immediately failing CLI leaves the new shell available before tmux labe
  await forkSession(h.source,dir,h.deps);
  assert.match(output.stderr,/synthetic startup failure/);
  assert.match(output.stdout,/status 23/);
- assert.equal(h.terminals.length,1);assert.equal(h.terminals[0].shown,true);
+ assert.equal(h.terminals.length,1);assert.equal(h.terminals[0].shown,true);assert.equal(h.terminals[0].strictEnv,true);assert.equal(h.terminals[0].env.PATH,process.env.PATH);
 });
 
 for(const [sourceProgram,targetProgram] of [['claude','codex2'],['codex','claudel'],['claude','claude2']]){

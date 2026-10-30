@@ -30,6 +30,9 @@ test('Sessions attaches once and resolves exact session identity, not a similar 
  assert.ok(target.shellPath.endsWith('/helpers/agent-tmux-attach.zsh'));
  assert.equal(target.env.AGENT_GLUE_WORKSPACE,'/fixture/workspace');
  assert.ok(target.env.AGENT_GLUE_TASKS_FILE.startsWith('/fake/storage/'));
+ assert.equal(target.strictEnv,true,'tmux clients must opt out of extension environment injection');
+ assert.equal(target.env.PATH,process.env.PATH,'strict environments retain the host launcher PATH');
+ assert.equal(target.env.HOME,process.env.HOME);
 });
 test('rename uses actual agent cwd and preserves the tracked terminal',async()=>{
  const h=host();await h.api.refresh();h.terminals[0].name='Renamed agent';h.listeners.change(h.terminals[0]);await h.api.refresh();

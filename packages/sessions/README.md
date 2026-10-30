@@ -62,3 +62,19 @@ If an unmapped terminal already has the session’s title, automatic attachment
 waits for that launcher even beyond the startup grace period. The title is only
 a reason to wait, never proof of session identity. If an unrelated shell has
 the same name, use **Agent Glue: Attach Agent Tmux Sessions** to attach explicitly.
+
+## Python environment relaunch warnings
+
+Agent Glue's newly attached and forked terminal clients use a fixed copy of the
+extension host's launcher environment (`strictEnv`). They attach to an existing
+tmux session; Python environment injection belongs inside the project shell,
+not in that attach client. This prevents other extensions from contributing
+new environment variables to these clients or requesting an environment refresh.
+Normal terminals and the running agents' environments are unaffected.
+
+An older tab may still show “extensions want to relaunch the terminal”, naming
+Python. This is an environment-change notification, not an agent crash. The
+new launcher policy cannot be applied retroactively to that existing process.
+Agent Glue never restarts a running terminal to clear this warning. VS Code
+already excludes extension-owned terminals from its automatic environment-change
+relaunch path; the warning's Relaunch button is a separate manual action.

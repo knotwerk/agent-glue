@@ -429,7 +429,10 @@ async function attachSessions({ quiet = false, force = false } = {}) {
             name,
             shellPath: ATTACH_SCRIPT,
             shellArgs: [item.session, name],
-            env: { AGENT_GLUE_WORKSPACE: SCRIPT_ROOT, AGENT_GLUE_TASKS_FILE: taskOutput },
+            // This is a tmux client, not a new project shell. Freeze its launcher
+            // environment so Python/other extensions cannot request reinjection.
+            strictEnv: true,
+            env: { ...process.env, AGENT_GLUE_WORKSPACE: SCRIPT_ROOT, AGENT_GLUE_TASKS_FILE: taskOutput },
             cwd: SCRIPT_ROOT,
         });
 

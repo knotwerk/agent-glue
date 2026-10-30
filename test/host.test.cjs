@@ -1035,8 +1035,7 @@ test('sidebar title follows the exact CLI profile and activity never captures ba
  const first={name:'First'},second={name:'Second'};
  const env=await start(t,{capture:'• Working (2s • esc to interrupt)',sessions:cwd=>[session(cwd,{name:'First',profile:'claude2'}),session(cwd,{id:'$2',name:'Second',profile:'codexl',pane:'%2'})]});
  env.vscode.window.activeTerminal=first;const view=await openSidebar(env);await settle(view);
- assert.equal(view.title,'AG - claude2');assert.equal(lastState(view).activities[0].status,'active');
- assert.equal(lastState(view).activities[1].status,'unknown');
+ assert.equal(view.title,'AG - claude2');assert.equal(lastState(view).activities,undefined);assert.doesNotMatch(view.webview.html,/id="activity-strip"/);
  assert.ok(env.calls.filter(([,args])=>args[0]==='capture-pane').every(([,args])=>args[args.indexOf('-t')+1]==='%1'));
  env.vscode.window.activeTerminal=second;env.log.activeTerminalChanged(second);await settle(view);assert.equal(view.title,'AG - codexl');
  env.vscode.window.activeTerminal={name:'Unrelated shell'};env.log.activeTerminalChanged(env.vscode.window.activeTerminal);await settle(view);assert.equal(view.title,'AG');

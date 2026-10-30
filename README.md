@@ -81,15 +81,8 @@ on macOS, dictation and clipboard images.
   Review hosted PRs or prepared local changes. Keep stable ordering, mark items
   read, and leave local feedback for your AI before anything is pushed. Prepared
   local reviews do not require a published GitHub PR.
-- **Spot what needs attention.** The sidebar title follows the selected CLI:
-  `AG - claude2`, `AG - codexl`, and so on. Its collapsible activity strip shows
-  terminal names with amber working, green done, red needs-attention and grey
-  unknown indicators. Click a row to focus its terminal. Explicit working and
-  permission prompts update for the selected visible terminal without using AI
-  tokens; saved reports are labelled with their age. The timer starts at first
-  observation, and helper counts come from reported descriptions. This is a
-  sidebar aid, not native terminal-tab recolouring or background monitoring.
-- **See what this terminal is doing.** **Terminal Status** (pulse icon) shows
+- **See what this terminal is doing.** The sidebar title follows the selected CLI,
+  such as `AG - claude2` or `AG - codexl`. **Terminal Status** (pulse icon) shows
   all unfinished tasks plus the three latest completions. Compact rows show
   status and update age; expand for the full title, plain-English progress,
   next step and supporting details. **🤖 Run** uses a separate one-off CLI call

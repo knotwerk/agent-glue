@@ -116,7 +116,7 @@ async function forkSession(source,destination,{exec,createTerminal,register,reso
  if(!/^\$\d+$/.test(target))throw Error('Tmux did not return the new session identity.');
  await exec('tmux',['set-option','-t',target,'@title',title]);
  if(child)await exec('tmux',['set-option','-t',target,'@agent_glue_thread_id',child]);
- const terminal=createTerminal({name:title,shellPath:path.join(__dirname,'helpers/agent-tmux-attach.zsh'),shellArgs:[session,title],cwd:destination});
+ const terminal=createTerminal({name:title,strictEnv:true,env:{...process.env},shellPath:path.join(__dirname,'helpers/agent-tmux-attach.zsh'),shellArgs:[session,title],cwd:destination});
  register(session,terminal);terminal.show();return {session,threadId:child,handoffFile};
 }
 module.exports={profile,resolveThread,forkSession,metadataMatches,saveHandoff};

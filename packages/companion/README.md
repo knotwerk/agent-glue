@@ -94,17 +94,6 @@ and do not count toward either limit. Switching sessions resets the view to 20.
 The title follows the selected CLI, such as `AG - claude2` or `AG - codexl`.
 The header contains Files, PRs, Status (pulse icon), and Refresh.
 
-The collapsible activity strip lists attached terminals. Amber means working,
-green means reported done, red means waiting for input or reported needs-attention,
-and grey means unknown or stale. Clicking a row focuses its terminal. Working
-and permission indicators recognize explicit prompts in the selected visible
-terminal; they do not infer completion from silence or inspect background panes.
-The timer measures time since continuous observation began, not total task runtime.
-Other rows use saved reports or last observations, labelled with their age;
-after five minutes they turn grey. Helper counts are distinct reported helper
-descriptions, not a live count of running agents. Normal polling uses no AI tokens.
-These indicators appear in Agent Glue; native terminal names and colours remain
-unchanged because VS Code does not expose supported live tab decoration updates.
 
 ![PR review and rendered HTML with synthetic content](https://raw.githubusercontent.com/knotwerk/agent-glue/main/docs/images/agent-glue-pr-review.png)
 
