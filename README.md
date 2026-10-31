@@ -88,6 +88,8 @@ on macOS, dictation and clipboard images.
   Claude stays amber for reported unfinished agents and explicitly running background
   services; completed or stopped jobs do not count. Hover shows the full terminal
   folder path. Routine heartbeat refreshes preserve the hover; timers show minutes.
+  New shell tabs that launch Claude/Codex in tmux gain their verified session name
+  and status dot automatically; custom tab names are preserved.
   Recent child-agent tool activity also shows amber without replacing the parent's status.
   Open the terminal for two seconds to clear it, or right-click **Mark Unread** to
   bring it back. Read marks survive reloads. Right-click also offers **Rename

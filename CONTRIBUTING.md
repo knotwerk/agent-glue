@@ -50,7 +50,8 @@ colour cannot hide a broken event pipeline.
 ### Terminal UI regression test
 
 `npm run test:ui` tests the real selector in an isolated VS Code web workbench:
-delayed provider registration without the default warning, rename the clicked
+delayed provider registration without the default warning, a shell adopting an
+agent session name and dot, rename the clicked
 terminal, hook events through the real status reducer to amber/red/green dots,
 running/stopped background services, folder hovers surviving heartbeat refreshes,
 selected colours, the unread ring, delayed

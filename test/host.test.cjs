@@ -160,6 +160,21 @@ test('manual Refresh retries terminal mappings and recovers saved status even wh
  assert.deepEqual(env.log.errors,[]);
 });
 
+test('a launching tmux tab gains the verified session title and status dot without replacing its terminal',async t=>{
+ let mapped=false;
+ const terminal={name:'tmux',creationOptions:{shellPath:'/bin/zsh'},show(){}};
+ const api={sessionForTerminal:()=>mapped?'claude-keen-grove':undefined,titleForTerminal:()=>mapped?'keen-grove':terminal.name,refresh:async()=>{mapped=true;}};
+ const host=fakeHost({sessionsApi:api});host.vscode.window.terminals=[terminal];host.vscode.window.activeTerminal=terminal;
+ const env=await start(t,{host,sessions:cwd=>[session(cwd,{sessionName:'claude-keen-grove',serverPid:'10',pane:'%2',created:'5',threadId:'fixture-chat'})]});
+ const provider=env.log.providers.get('agentGlue.terminalSelector');
+ assert.equal(provider.getTreeItem(terminal).label,'tmux');assert.equal(provider.getTreeItem(terminal).iconPath.id,'terminal');
+ const {writeUnlinkedEvent}=require('../packages/companion/src/lifecycle-hook.cjs');
+ await writeUnlinkedEvent(path.join(env.context.globalStorageUri.fsPath,'lifecycle'),{event:'UserPromptSubmit',session:'fixture-chat',at:Date.now()});
+ await env.log.commands.get('agentGlue.refreshResources')();
+ const item=provider.getTreeItem(terminal);assert.equal(item.label,'keen-grove');assert.match(item.iconPath.dark.fsPath,/status-amber-dark.svg$/);
+ assert.equal(item.command.arguments[0],terminal);assert.equal(host.vscode.window.terminals.length,1);
+});
+
 test('activate does nothing in an untrusted workspace', async t => {
   const env = await start(t, { host: fakeHost({ trusted: false }) });
   assert.equal(env.log.commands.size, 0);

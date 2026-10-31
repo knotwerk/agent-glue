@@ -22,10 +22,10 @@ exports.activate=async context=>{
  const {summarize}=require(${JSON.stringify(path.join(root,'packages/companion/src/lifecycle.cjs'))});
  const {eventRecord}=require(${JSON.stringify(path.join(root,'packages/companion/src/lifecycle-hook.cjs'))});
  const identity={server:'1',pane:'%1',created:'1'},session={serverPid:'1',pane:'%1',created:'1'};
- let selector,control=[eventRecord({hook_event_name:'UserPromptSubmit',session_id:'ui'},identity,Date.now())];
+ let selector,connected=false,control=[eventRecord({hook_event_name:'UserPromptSubmit',session_id:'ui'},identity,Date.now())];
  function terminal(name){const write=new vscode.EventEmitter();return vscode.window.createTerminal({name,pty:{onDidWrite:write.event,open(){write.fire('Synthetic terminal for UI testing. No shell or tmux.\\r\\n');},close(){}}});}
- const a=terminal('UI Alpha'),b=terminal('UI Beta');a.show(false);selector=registerSelector(vscode,context,t=>t===b?'fixture-agent':undefined,()=>summarize(control,session),async()=>'/remote/projects/example');
- const timer=setInterval(()=>{try{control=JSON.parse(fs.readFileSync(${JSON.stringify(path.join(dir,'control.json'))},'utf8')).map(e=>eventRecord(e,identity,e.at));}catch{}selector.refresh();fs.writeFileSync(${JSON.stringify(path.join(dir,'state.json'))},JSON.stringify({names:vscode.window.terminals.map(t=>t.name),active:vscode.window.activeTerminal?.name}));},150);context.subscriptions.push({dispose(){clearInterval(timer);}});
+ const a=terminal('UI Alpha'),b=terminal('tmux');a.show(false);selector=registerSelector(vscode,context,t=>t===b&&connected?'fixture-agent':undefined,()=>summarize(control,session),async()=>'/remote/projects/example',t=>t===b&&connected&&t.name==='tmux'?'UI Beta':t.name);
+ const timer=setInterval(()=>{connected=fs.existsSync(${JSON.stringify(path.join(dir,'session-connected'))});try{control=JSON.parse(fs.readFileSync(${JSON.stringify(path.join(dir,'control.json'))},'utf8')).map(e=>eventRecord(e,identity,e.at));}catch{}selector.refresh();fs.writeFileSync(${JSON.stringify(path.join(dir,'state.json'))},JSON.stringify({names:vscode.window.terminals.map(t=>t.name),active:vscode.window.activeTerminal?.name}));},150);context.subscriptions.push({dispose(){clearInterval(timer);}});
  await vscode.commands.executeCommand('agentGlue.tryTerminalSelector');
 };`);
 fs.writeFileSync(path.join(dir,'user','User','settings.json'),JSON.stringify({'telemetry.telemetryLevel':'off','security.workspace.trust.enabled':false,'workbench.startupEditor':'none','workbench.tips.enabled':false,'terminal.integrated.hideOnStartup':'whenEmpty','extensions.autoUpdate':false,'extensions.ignoreRecommendations':true}));
@@ -50,7 +50,10 @@ let output='',startupError;server.on('error',error=>{startupError=error;});serve
   assert.equal(await page.getByText('There is no data provider registered that can provide view data.',{exact:true}).isVisible(),false);
   await page.screenshot({path:path.join(dir,'loading.png')});
   fs.writeFileSync(path.join(dir,'register-provider'),'ready');
-  await page.getByRole('treeitem').filter({hasText:'UI Beta'}).first().waitFor({timeout:45000});
+  const launching=page.getByRole('treeitem').filter({hasText:'tmux'}).first();await launching.waitFor({timeout:45000});
+  assert.doesNotMatch(await launching.innerHTML(),/status-(?:amber|grey|green|red)/);
+  fs.writeFileSync(path.join(dir,'session-connected'),'connected');
+  await page.getByRole('treeitem').filter({hasText:'UI Beta'}).first().waitFor({timeout:10000});
   assert.equal(await page.getByText('Loading terminals…',{exact:true}).isVisible(),false);
   const trust=page.getByRole('button',{name:'Trust Folder & Continue'});if(await trust.isVisible())await trust.click();
   await page.screenshot({path:path.join(dir,'before.png')});
@@ -81,7 +84,7 @@ let output='',startupError;server.on('error',error=>{startupError=error;});serve
   await color('green-new');await renamed.click();await page.waitForTimeout(2200);await page.keyboard.press('F1');const commands=page.locator('.quick-input-widget input');await commands.fill('>Agent Glue: Try Terminal Selector Beside Terminals');await page.waitForTimeout(300);await commands.press('Enter');await color('green');
   await renamed.click({button:'right'});const unread=page.getByRole('menuitem',{name:'Mark Unread',exact:true});await unread.click();if(await unread.isVisible())await unread.press('Enter');await color('green-new');
   await page.screenshot({path:path.join(dir,'unread.png')});
-  console.log(JSON.stringify({passed:true,checks:['loading without provider warning','rename exact terminal','hook events to amber/red/green','running service amber, stopped service green','folder hover survives heartbeat refreshes','selected colour preserved','finished ring','read delay','mark unread'],dir,state}));
+  console.log(JSON.stringify({passed:true,checks:['shell becomes named agent row with status dot','loading without provider warning','rename exact terminal','hook events to amber/red/green','running service amber, stopped service green','folder hover survives heartbeat refreshes','selected colour preserved','finished ring','read delay','mark unread'],dir,state}));
  }catch(e){console.error(e.stack);console.error('UI artifacts: '+dir);if(browser){const p=browser.contexts()[0]?.pages()[0];if(p){await p.screenshot({path:path.join(dir,'failure.png')});fs.writeFileSync(path.join(dir,'failure.txt'),await p.locator('body').innerText());}}process.exitCode=1;
  }finally{try{await browser?.close();}finally{server.kill('SIGTERM');}}
 })();

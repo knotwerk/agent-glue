@@ -1,7 +1,7 @@
 'use strict';
 const path=require('node:path');
 // Native terminal controls; lifecycle status is deliberately not inferred here.
-function registerSelector(vscode,context,sessionForTerminal=()=>undefined,statusForSession=()=>({status:'unknown',label:'No lifecycle events yet'}),cwdForTerminal=terminal=>terminal.shellIntegration?.cwd||terminal.creationOptions?.cwd){
+function registerSelector(vscode,context,sessionForTerminal=()=>undefined,statusForSession=()=>({status:'unknown',label:'No lifecycle events yet'}),cwdForTerminal=terminal=>terminal.shellIntegration?.cwd||terminal.creationOptions?.cwd,titleForTerminal=terminal=>terminal.name){
  if(!vscode.window.createTreeView)return;
  let providerReady=false;
  void Promise.resolve(vscode.commands.executeCommand('setContext','agentGlue.terminalsReady',false)).catch(()=>{});
@@ -84,14 +84,15 @@ function registerSelector(vscode,context,sessionForTerminal=()=>undefined,status
    if(!ids.has(terminal))ids.set(terminal,String(++nextId));
    const location=terminal.creationOptions?.location;
    const editor=location===2||Boolean(location&&typeof location==='object'&&'viewColumn' in location);
-   const same=listed().filter(t=>t.name===terminal.name);
+   const label=titleForTerminal(terminal)||terminal.name;
+   const same=listed().filter(t=>(titleForTerminal(t)||t.name)===label);
    const state=status(terminal),now=Date.now();
    const age=at=>{const minutes=Math.max(0,Math.floor((now-at)/60000));return minutes<1?'<1m':minutes+'m';};
    const elapsed=state?.status==='active'?(state.since?age(state.since):''):state?.at?age(state.at)+' ago':'';
    const description=[elapsed,editor?'Editor':'',same.length>1?'Tab '+(same.indexOf(terminal)+1):''].filter(Boolean).join(' · ');
    const group=children(terminal).length>0,split=parents.has(terminal),agent=Boolean(sessionForTerminal(terminal));
    const contextValue=agent?(group?'agentGlueAgentGroupTerminal':split?'agentGlueAgentSplitTerminal':'agentGlueAgentTerminal'):(group?'agentGlueGroupTerminal':split?'agentGlueSplitTerminal':'agentGlueTerminal');
-   return {id:ids.get(terminal),label:terminal.name,description:description||undefined,contextValue,collapsibleState:group?2:0,
+   return {id:ids.get(terminal),label,description:description||undefined,contextValue,collapsibleState:group?2:0,
     iconPath:state?statusIcon(state,unread(terminal)):new vscode.ThemeIcon('terminal'),
     command:{command:'agentGlue.focusSelectorTerminal',title:'Focus terminal',arguments:[terminal]}};
   },
@@ -102,7 +103,7 @@ function registerSelector(vscode,context,sessionForTerminal=()=>undefined,status
    if(token?.isCancellationRequested||!isOpen(terminal))return item;
    const folder=typeof cwd==='string'?cwd:cwd?.fsPath;
    const state=status(terminal),elapsed=provider.getTreeItem(terminal).description;
-   item.tooltip=terminal.name+' — '+(terminal===vscode.window.activeTerminal?'selected terminal':'click to focus')+'\n'+(sessionForTerminal(terminal)||'Shell terminal')+(folder?'\nFolder: '+folder:'')+'\n'+(state?state.label+(elapsed?' · '+elapsed:'')+(state.at?' · '+new Date(state.at).toLocaleTimeString():''):'Shell terminal')+(unread(terminal)?'\nNew completion — open this terminal to mark read':'');
+   item.tooltip=(titleForTerminal(terminal)||terminal.name)+' — '+(terminal===vscode.window.activeTerminal?'selected terminal':'click to focus')+'\n'+(sessionForTerminal(terminal)||'Shell terminal')+(folder?'\nFolder: '+folder:'')+'\n'+(state?state.label+(elapsed?' · '+elapsed:'')+(state.at?' · '+new Date(state.at).toLocaleTimeString():''):'Shell terminal')+(unread(terminal)?'\nNew completion — open this terminal to mark read':'');
    return item;
   },getParent:terminal=>{children();return parents.get(terminal);}};
  const dragAndDropController={dragMimeTypes:[mime],dropMimeTypes:[mime],
@@ -167,7 +168,7 @@ function registerSelector(vscode,context,sessionForTerminal=()=>undefined,status
    if(!isOpen(terminal))return;
    // Own the selector's name prompt, then confirm the clicked terminal is
    // active before applying the name through the native RenameWithArgs command.
-   const name=await vscode.window.showInputBox({title:'Rename Terminal',value:terminal.name,prompt:'Choose a name for this terminal',validateInput:value=>value.trim()?undefined:'Enter a terminal name.'});
+   const name=await vscode.window.showInputBox({title:'Rename Terminal',value:titleForTerminal(terminal)||terminal.name,prompt:'Choose a name for this terminal',validateInput:value=>value.trim()?undefined:'Enter a terminal name.'});
    if(name===undefined||!name.trim())return;
    if(!await selectTerminal(terminal))return;
    await vscode.commands.executeCommand('workbench.action.terminal.renameWithArg',{name:name.trim()});refresh();

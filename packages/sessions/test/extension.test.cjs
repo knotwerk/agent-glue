@@ -9,9 +9,9 @@ function host(options={}){
  let session='claude-fixture-20261014_120000',title='Fixture agent';
  const dispose=()=>({dispose(){}});
  const context={subscriptions:[],globalStorageUri:{fsPath:'/fake/storage'},globalState:options.globalState||{get:()=>undefined,update:async()=>{}}};
- const vscode={workspace:{isTrusted:true,workspaceFolders:[{uri:{fsPath:'/fixture/workspace'}}]},extensions:{all:[]},commands:{registerCommand:(name,fn)=>{commands.set(name,fn);return dispose();}},tasks:{registerTaskProvider:(name,provider)=>{listeners.tasks=provider;return dispose();}},TaskScope:{Workspace:1},Task:class{constructor(...args){this.args=args;}},ProcessExecution:class{constructor(...args){this.args=args;}},window:{terminals,showInformationMessage(message){messages.push(message);},showWarningMessage(){},onDidChangeTerminalState:fn=>{listeners.change=fn;return dispose();},onDidCloseTerminal:fn=>{listeners.close=fn;return dispose();},onDidOpenTerminal:fn=>{listeners.open=fn;return dispose();},createTerminal:options=>{const terminal={...options,processId:Promise.resolve(42),dispose(){throw new Error('Unexpected terminal destruction');}};terminals.push(terminal);return terminal;}}};
+ const vscode={workspace:{isTrusted:true,workspaceFolders:[{uri:{fsPath:'/fixture/workspace'}}]},extensions:{all:[]},commands:{registerCommand:(name,fn)=>{commands.set(name,fn);return dispose();}},tasks:{registerTaskProvider:(name,provider)=>{listeners.tasks=provider;return dispose();}},TaskScope:{Workspace:1},Task:class{constructor(...args){this.args=args;}},ProcessExecution:class{constructor(...args){this.args=args;}},window:{terminals,showInformationMessage(message){messages.push(message);},showWarningMessage(){},onDidChangeTerminalState:fn=>{listeners.change=fn;return dispose();},onDidCloseTerminal:fn=>{listeners.close=fn;return dispose();},onDidOpenTerminal:fn=>{listeners.open=fn;return dispose();},createTerminal:options=>{const terminal={...options,creationOptions:options,processId:Promise.resolve(42),dispose(){throw new Error('Unexpected terminal destruction');}};terminals.push(terminal);return terminal;}}};
  const child={
-  exec(command,settings,callback){if(typeof settings==='function'){callback=settings;settings=undefined;}calls.push(command);execOptions.push(settings);if(options.exec)return options.exec(command,settings,callback);let stdout='';if(command.includes('list-sessions'))stdout=options.sessions?.()||[session,title,'','1700000000'].join('\x1f')+'\n';if(command.includes('list-clients'))stdout=options.clients?.()||'';if(command.startsWith('ps '))stdout=options.processes?.()||'';callback(null,stdout,'');},
+  exec(command,settings,callback){if(typeof settings==='function'){callback=settings;settings=undefined;}calls.push(command);execOptions.push(settings);if(options.exec)return options.exec(command,settings,callback);let stdout='';if(command.includes('list-sessions'))stdout=options.sessions?options.sessions():[session,title,'','1700000000'].join('\x1f')+'\n';if(command.includes('list-clients'))stdout=options.clients?.()||'';if(command.startsWith('ps '))stdout=options.processes?.()||'';callback(null,stdout,'');},
   execFile(file,args,options,callback){if(typeof options==='function')callback=options;calls.push({file,args,options});let stdout='';if(file==='tmux'&&args[0]==='display-message')stdout='/fixture/actual-agent-project\n';if(file.endsWith('agent-tmux-rename.zsh')){session='claude-renamed-20261014_120000';title=args[1];stdout=session+'\n';}callback(null,stdout,'');}
  };
  // Node promisify honors this result shape for native child_process functions.
@@ -254,4 +254,76 @@ test('state events still preserve renames of multiple terminals',async()=>{
  const h=host({sessions:()=>oneSession()+'codex-two\x1fTwo\x1f\x1f1700000000\x1f$2\x1f500\n'});await h.api.refresh();
  const [a,b]=h.terminals;a.name='Alpha renamed';b.name='Beta renamed';h.listeners.change(a);h.listeners.change(b);h.listeners.change(a);
  await h.api.refresh();const titles=h.calls.filter(c=>c.file?.endsWith('agent-tmux-rename.zsh')).map(c=>c.args[1]);assert.deepEqual(titles,['alpha-renamed','beta-renamed']);
+});
+
+test('ordinary shells become agent terminals after a new PID promise, across supported accounts',async()=>{
+ for(const profile of ['claude','claude2','claudel','claudelp','codex','codex2','codex3','codexl']){
+  let connected=false;
+  const session=profile+'-keen-grove',terminal={name:'zsh',processId:Promise.resolve(undefined),creationOptions:{shellPath:'/bin/zsh'}};
+  const h=host({terminals:[terminal],sessions:()=>connected?[session,'keen-grove','','1700000000','$7','500'].join('\x1f')+'\n':'',clients:()=>connected?`82\x1f${session}\n`:'',processes:()=> '82 81 tmux: client\n81 1 zsh\n'});
+  await h.api.refresh();assert.equal(h.api.sessionForTerminal(terminal),undefined);
+  terminal.processId=Promise.resolve(81);terminal.name='tmux';connected=true;h.listeners.change(terminal);
+  await h.api.refresh();
+  assert.equal(h.api.sessionForTerminal(terminal),session,profile);assert.equal(h.api.titleForTerminal(terminal),'keen-grove');
+  assert.equal(h.terminals.length,1,'adopt the launching shell rather than open a second client');
+  assert.ok(!h.calls.some(c=>c.file?.endsWith('agent-tmux-rename.zsh')),'a process title is not a user rename');
+  terminal.name='My chosen label';assert.equal(h.api.titleForTerminal(terminal),'My chosen label');
+ }
+});
+
+test('relaunch with a changed numeric PID is rediscovered without waiting for or accepting an older promise',async()=>{
+ let resolveOld,connected=false;
+ const terminal={name:'tmux',processId:new Promise(resolve=>{resolveOld=resolve;}),creationOptions:{shellPath:'/bin/zsh'}};
+ const h=host({terminals:[terminal],sessions:()=>connected?oneSession():'',clients:()=>connected?'81\x1fclaude-one\n':''});
+ await completes(h.api.refresh());
+ terminal.processId=Promise.resolve(81);connected=true;await completes(h.api.refresh());
+ assert.equal(h.api.sessionForTerminal(terminal),'claude-one');assert.equal(h.terminals.length,1);
+ resolveOld(71);await new Promise(resolve=>setImmediate(resolve));await completes(h.api.refresh());
+ assert.equal(h.api.sessionForTerminal(terminal),'claude-one');assert.equal(h.terminals.length,1);
+ terminal.processId=Promise.resolve(91);connected=false;await completes(h.api.refresh());
+ assert.equal(h.api.sessionForTerminal(terminal),undefined,'a relaunched ordinary shell cannot retain its old agent dot');
+});
+
+test('a shell leaving tmux loses its old mapping even when its original PID stays alive',async()=>{
+ let connected=true;
+ const terminal={name:'tmux',processId:Promise.resolve(71),creationOptions:{shellPath:'/bin/zsh'}};
+ const h=host({terminals:[terminal],sessions:oneSession,clients:()=>connected?'72\x1fclaude-one\n':'',processes:()=> '72 71 tmux\n71 1 zsh\n'});
+ await h.api.refresh();assert.equal(h.api.sessionForTerminal(terminal),'claude-one');
+ connected=false;terminal.name='zsh';await h.api.refresh();
+ assert.equal(h.api.sessionForTerminal(terminal),undefined);assert.equal(h.api.titleForTerminal(terminal),'zsh');
+});
+
+test('an undefined initial PID is unresolved, not permission to create a duplicate client',async()=>{
+ const terminal={name:'tmux',processId:Promise.resolve(undefined),creationOptions:{shellPath:'/bin/zsh'}};
+ const h=host({terminals:[terminal],sessions:oneSession,clients:()=> '71\x1fclaude-one\n'});
+ await completes(h.api.refresh());assert.equal(h.terminals.length,1);assert.equal(h.api.sessionForTerminal(terminal),undefined);
+ terminal.processId=Promise.resolve(71);await completes(h.api.refresh());
+ assert.equal(h.terminals.length,1);assert.equal(h.api.sessionForTerminal(terminal),'claude-one');
+});
+
+test('a shell launching tmux with the same shell PID gains a session title on the next discovery',async()=>{
+ for(const profile of ['claude','codex']){
+  let connected=false;const session=profile+'-keen-grove';
+  const terminal={name:'zsh',processId:Promise.resolve(71),creationOptions:{shellPath:'/bin/zsh'}};
+  const h=host({terminals:[terminal],sessions:()=>connected?[session,'keen-grove','','1700000000','$7','500'].join('\x1f'):'',clients:()=>connected?`72\x1f${session}\n`:'',processes:()=> '72 71 tmux: client\n71 1 zsh\n'});
+  await h.api.refresh();assert.equal(h.api.sessionForTerminal(terminal),undefined);
+  connected=true;terminal.name='tmux';h.listeners.change(terminal);await h.api.refresh();
+  assert.equal(h.api.sessionForTerminal(terminal),session);assert.equal(h.api.titleForTerminal(terminal),'keen-grove');assert.equal(h.terminals.length,1);
+ }
+});
+
+test('a PID promise replaced during client lookup cannot create a duplicate from the obsolete snapshot',async()=>{
+ let connected=false,replaced=false;
+ const terminal={name:'tmux',processId:Promise.resolve(71),creationOptions:{shellPath:'/bin/zsh'}};
+ const h=host({terminals:[terminal],exec:(command,settings,callback)=>{
+  let stdout='';if(command.includes('list-sessions')&&connected)stdout=oneSession();
+  if(command.includes('list-clients')&&connected){
+   if(replaced)stdout='81\x1fclaude-one\n';
+   else {terminal.processId=Promise.resolve(81);replaced=true;}
+  }
+  callback(null,stdout,'');
+ }});
+ await h.api.refresh();connected=true;await h.api.refresh();
+ assert.equal(h.terminals.length,1,'the old PID snapshot is incomplete after replacement');
+ await h.api.refresh();assert.equal(h.api.sessionForTerminal(terminal),'claude-one');assert.equal(h.terminals.length,1);
 });

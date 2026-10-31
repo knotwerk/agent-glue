@@ -38,7 +38,7 @@ function activate(context){
     const link=await sessionsApi(),name=link?.sessionForTerminal(terminal);
     const cwd=name?(await core.sessions()).find(session=>session.sessionName===name)?.cwd:undefined;
     return cwd||terminal.shellIntegration?.cwd||terminal.creationOptions?.cwd;
-  }):undefined;
+  },terminal=>api?.titleForTerminal?.(terminal)||terminal.name):undefined;
   let resourceTab='files',prFilter=context.workspaceState.get('prFilter','all'),resourceItems=[],resourceStatus='',resourceKey='',resourceRoot,resourceGeneration=0,resourceLoadedAt=0;
   let prSort=context.workspaceState.get('prSort','title'),prReadFilter=context.workspaceState.get('prReadFilter','all');
   const prRead=context.workspaceState.get('prRead',{});

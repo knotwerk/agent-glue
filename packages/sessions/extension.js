@@ -284,24 +284,37 @@ function rememberAttachments(items) {
 }
 
 function observeTerminalPid(terminal) {
-    let record = terminalPids.get(terminal);
-    if (record) return record;
-    record = { pending: true, waited: false };
+    const previous = terminalPids.get(terminal);
+    const source = terminal.processId;
+    // VS Code replaces this promise when a terminal is relaunched/reused.
+    // Observe each generation once, without awaiting it on the restore queue.
+    if (previous && previous.source === source) return previous;
+    const record = { source, pending: true, waited: Boolean(previous) };
     terminalPids.set(terminal, record);
-    // Subscribe once, without putting this terminal's promise on the shared
-    // operation queue. Resolution schedules a fresh client snapshot if needed.
-    Promise.resolve().then(() => terminal.processId).then(pid => {
+    Promise.resolve(source).then(pid => {
+        if (terminalPids.get(terminal) !== record) return;
         record.pid = pid; record.pending = false;
+        record.failed = !Number.isInteger(pid) || pid <= 0;
+        if (previous && previous.pid !== pid && !attachmentIdentity(terminal)) {
+            // An ordinary shell's new process must establish its own live link.
+            terminalSessionIdentities.delete(terminal);
+            terminalSessions.delete(terminal);
+        }
         if (record.waited && vscode.window.terminals.includes(terminal)) {
             void schedule('attachPoll', () => attachSessions({ quiet: true }));
         }
-    }, () => { record.pending = false; record.failed = true; });
+    }, () => { if (terminalPids.get(terminal) === record) { record.pending = false; record.failed = true; } });
     return record;
 }
 
 function terminalSessionFromPid(terminal, pid, clientSessionsByPid, liveSessionNames, liveByIdentity) {
     const session = clientSessionsByPid.get(String(pid));
     if (session && liveSessionNames.has(session)) return session;
+
+    // A shell that detached or changed process is no longer proof of its old
+    // agent session. Only our own attachment helper may use saved identity.
+    const managed = path.basename(terminal.creationOptions?.shellPath || '') === 'agent-tmux-attach.zsh';
+    if (!managed) return undefined;
 
     const identity = terminalSessionIdentities.get(terminal);
     if (identity) return liveByIdentity.get(identity)?.session;
@@ -332,13 +345,17 @@ async function refreshTerminalMappings() {
     const liveBySession = new Map(sessions.map(item => [item.session, item]));
     const liveSessionNames = new Set(liveBySession.keys());
     const liveByIdentity = new Map(sessions.filter(item => item.identity).map(item => [item.identity, item]));
-    const snapshotPids = new Map(terminals.map(terminal => [terminal, terminalPids.get(terminal).pid]));
+    const snapshotRecords = new Map(terminals.map(terminal => [terminal, terminalPids.get(terminal)]));
+    const snapshotPids = new Map(terminals.map(terminal => [terminal, snapshotRecords.get(terminal).pid]));
     // Without any ready PIDs there is nothing to join against the process
     // table. Validate saved identities now; resolution triggers a fresh pass.
     const clientSessionsByPid = [...snapshotPids.values()].some(pid => pid !== undefined)
         ? await getTmuxClientSessionsByPid() : new Map();
     if (report) startupLog('client query', `ok=${Boolean(clientSessionsByPid)}`);
     if (!clientSessionsByPid) return { complete: false, terminals };
+    // A relaunch can happen while metadata queries are in flight. An older
+    // snapshot must not justify opening a duplicate for the replacement shell.
+    terminals.forEach(observeTerminalPid);
     const currentTerminals = new Set(vscode.window.terminals);
 
     const rebuiltTerminals = new Map();
@@ -349,7 +366,8 @@ async function refreshTerminalMappings() {
             terminalNames.set(terminal, normalizeName(terminal.name));
         }
 
-        const session = terminalSessionFromPid(terminal, snapshotPids.get(terminal), clientSessionsByPid, liveSessionNames, liveByIdentity);
+        const pid = terminalPids.get(terminal) === snapshotRecords.get(terminal) ? snapshotPids.get(terminal) : undefined;
+        const session = terminalSessionFromPid(terminal, pid, clientSessionsByPid, liveSessionNames, liveByIdentity);
         if (!session) {
             terminalSessions.delete(terminal);
             continue;
@@ -394,7 +412,7 @@ async function refreshTerminalMappings() {
         if (record.pending) record.waited = true;
         return currentTerminals.has(terminal) && !terminalSessions.has(terminal)
             && !terminal.creationOptions?.hideFromUser && !terminal.creationOptions?.pty
-            && (record.pending || record.failed || record.pid !== snapshotPids.get(terminal));
+            && (record.pending || record.failed || record !== snapshotRecords.get(terminal) || record.pid !== snapshotPids.get(terminal));
     });
     if (report) startupLog('mapping', `mapped=${terminalSessions.size} pending=${unresolved}`);
     return { complete: true, unresolved, sessions, liveBySession, liveSessionNames, terminals };
@@ -598,6 +616,7 @@ function activate(context) {
             void schedule('attachAll', () => attachSessions({ quiet: false, force: true }));
         }),
         vscode.window.onDidChangeTerminalState((terminal) => {
+            observeTerminalPid(terminal);
             // Restore emits state changes even when no name changed. Opening
             // tabs and PID resolution have their own discovery events; avoid
             // another full scan here while preserving actual rename operations.
@@ -630,7 +649,11 @@ function activate(context) {
     return { handoffProfiles: [...AGENT_PROGRAMS], forkSession: (source,destination,options) => {
         const result=operationQueue.catch(()=>{}).then(()=>require('./fork.cjs').forkSession(source,destination,{exec:execFileAsync,createTerminal:options=>vscode.window.createTerminal(options),register:(session,terminal)=>{terminalSessions.set(terminal,session);addSessionTerminal(session,terminal);},handoffDirectory:path.join(context.globalStorageUri.fsPath,'handoffs')},options));
         operationQueue=result.catch(error=>warn('fork',error));return result;
-    }, terminalForSession: session => [...(sessionTerminals.get(session) || [])].find(t => vscode.window.terminals.includes(t)), sessionForTerminal: terminal => terminalSessions.get(terminal), refresh: () => schedule('apiRefresh', () => attachSessions({ quiet: true })) };
+    }, terminalForSession: session => [...(sessionTerminals.get(session) || [])].find(t => vscode.window.terminals.includes(t)), sessionForTerminal: terminal => terminalSessions.get(terminal),
+    titleForTerminal: terminal => {
+        const session = terminalSessions.get(terminal);
+        return session && !isPersistableTitle(terminal.name) ? lastKnownNames.get(session) || nameFromSession(session) : terminal.name;
+    }, refresh: () => schedule('apiRefresh', () => attachSessions({ quiet: true })) };
 }
 
 function deactivate() {}

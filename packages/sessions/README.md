@@ -35,7 +35,9 @@ MIT licensed, free to reuse and modify.
   process ID arrives. Missing or stale tokens fall back to asynchronous process
   discovery; terminal names alone never establish identity. New terminal events
   trigger discovery immediately, with periodic retries as a fallback. Existing
-  tabs without tokens continue to work through process discovery.
+  tabs without tokens continue to work through process discovery. Reused or
+  relaunched tabs are rediscovered when VS Code supplies a new process ID;
+  their old ID does not remain cached forever.
 - Generated tasks live in extension storage and appear through a task provider;
   workspace `tasks.json` is never touched.
 - Exposes a small API to **Agent Glue Companion** (find, focus and paste into a
@@ -67,6 +69,10 @@ Detached sessions are picked up on the next five-second poll after that grace
 period; older sessions still attach immediately. Pending attachments retain
 tmux's server/session identity across renames, rather than relying on the
 terminal's temporary title. Distinct sessions may legitimately share a title.
+
+When a normal shell launches a Claude/Codex tmux session, Companion’s **Terminals**
+selector adopts its verified session name and status dot. Generic process titles
+such as `tmux` are replaced in the selector; custom tab names are preserved.
 
 Sessions never closes or recreates a terminal just to update its title. A tab
 with a fixed startup label may keep that label after a tmux-side rename; use
