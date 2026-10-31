@@ -52,7 +52,8 @@ colour cannot hide a broken event pipeline.
 `npm run test:ui` tests the real selector in an isolated VS Code web workbench:
 delayed provider registration without the default warning, rename the clicked
 terminal, hook events through the real status reducer to amber/red/green dots,
-background-server completion, selected colours, the unread ring, delayed
+running/stopped background services, folder hovers surviving heartbeat refreshes,
+selected colours, the unread ring, delayed
 mark-as-read and Mark Unread. Its terminals are synthetic pseudoterminals; it
 starts no shell or agent and does not connect to tmux. It uses a separate home,
 profile and extension folder under ignored `_script_outputs/`, and closes only

@@ -11,8 +11,9 @@ function storedThreadEvent(value){
  const child=['SubagentActivity','SubagentBlocked','SubagentStop'].includes(value.event)&&/^[a-f0-9]{64}$/.test(value.child)?value.child:undefined;
  const agents=background!==undefined&&Number.isSafeInteger(value.agents)&&value.agents>=0&&value.agents<=background?value.agents:undefined;
  const uncertain=agents!==undefined&&Number.isSafeInteger(value.uncertain)&&value.uncertain>=0&&value.uncertain<=background-agents?value.uncertain:undefined;
+ const services=agents!==undefined&&uncertain!==undefined&&Number.isSafeInteger(value.services)&&value.services>=0&&value.services<=background-agents-uncertain?value.services:undefined;
  if(value.event==='SubagentStop'&&background===undefined&&!child)return;
- return {event:value.event,session:value.session,at:value.at,...(background===undefined?{}:{background}),...(agents===undefined||uncertain===undefined?{}:{agents,uncertain}),...(child?{child}:{})};
+ return {event:value.event,session:value.session,at:value.at,...(background===undefined?{}:{background}),...(agents===undefined||uncertain===undefined?{}:{agents,uncertain}),...(services===undefined?{}:{services}),...(child?{child}:{})};
 }
 function storedEvent(value){
  if(!value||!EVENTS.includes(value.event)||typeof value.session!=='string'||!value.session||value.session.length>200||!/^\d{1,20}$/.test(value.server)||!/^%\d{1,20}$/.test(value.pane)||!/^\d{1,20}$/.test(value.created)||!Number.isSafeInteger(value.at)||value.at<0)return;
@@ -27,21 +28,25 @@ function inputEvent(input,now=Date.now()){
  if(input.agent_id&&!childActivity&&!childBlocked&&input.hook_event_name!=='SubagentStop')return;
  if(input.hook_event_name==='Notification'&&!['permission_prompt','elicitation_dialog'].includes(input.notification_type))return;
  // Claude's Stop/SubagentStop task list is scoped to the parent session.
- // Count agent work separately: shell servers, monitors and scheduled jobs do
- // not mean an agent is still responding. Unknown types stay explicitly unknown.
+ // Count agents and services separately. Services must explicitly report a
+ // running state; scheduled/pending services are not running processes.
  const background=['Stop','SubagentStop'].includes(input.hook_event_name)&&Array.isArray(input.background_tasks)&&input.background_tasks.length<=10000?input.background_tasks.length:undefined;
- let agents,uncertain;
+ let agents,uncertain,services;
  if(background!==undefined){
-  agents=0;uncertain=0;
+  agents=0;uncertain=0;services=0;
   for(const task of input.background_tasks){
    if(['completed','complete','done','failed','cancelled','canceled','stopped'].includes(task?.status))continue;
-   if(['shell','monitor','workflow','MCP task'].includes(task?.type))continue;
+   if(['shell','monitor','workflow','MCP task'].includes(task?.type)){
+    if(['running','in_progress'].includes(task?.status))services++;
+    else if(!['pending','queued','scheduled','idle'].includes(task?.status))uncertain++;
+    continue;
+   }
    if(['subagent','teammate','cloud session'].includes(task?.type)&&['running','pending','queued','in_progress'].includes(task?.status))agents++;
    else uncertain++;
   }
  }
  const child=typeof input.agent_id==='string'&&input.agent_id.length<=200?crypto.createHash('sha256').update(input.session_id+':'+input.agent_id).digest('hex'):undefined;
- return storedThreadEvent({event:childActivity?'SubagentActivity':childBlocked?'SubagentBlocked':input.hook_event_name,session:input.session_id,at:now,background,agents,uncertain,child});
+ return storedThreadEvent({event:childActivity?'SubagentActivity':childBlocked?'SubagentBlocked':input.hook_event_name,session:input.session_id,at:now,background,agents,uncertain,services,child});
 }
 function eventRecord(input,identity,now=Date.now()){
  const event=inputEvent(input,now);if(event)return storedEvent({...event,server:String(identity.server),pane:identity.pane,created:String(identity.created)});

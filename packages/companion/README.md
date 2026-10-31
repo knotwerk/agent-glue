@@ -203,14 +203,18 @@ and 200 records per project. No conversation histories or agent memory are index
 The **Terminals** selector displays local lifecycle events from Claude and Codex:
 consistent RAG dots (their colours stay visible when selected): amber for working, red for permission/input requested, green
 for a finished turn, and grey for idle or unknown. Rows show only the dot and timing;
-hover for status details. Working time starts at a recorded prompt and is omitted
+hover for status details and the full folder path (tmux folder for agent terminals).
+Only rows with visible changes are refreshed; routine heartbeats do not rebuild
+the list and dismiss its hovers. Timers update in minutes. Working time starts at a recorded prompt and is omitted
 when that start event is missing; tool events do not reset it. Other timestamps
 show time since the recorded update. Hidden VS Code tool terminals are
 excluded from the list.
 Green means the agent finished responding, not that all project work is complete.
-Claude replies that report running subagents, teammates or cloud agents stay amber.
-Shell servers, monitors, workflows, MCP tasks and scheduled wakeups do not keep a
-finished reply amber. Unknown task types or older untyped background counts stay
+Claude replies that report running subagents, teammates, cloud agents or background
+services stay amber. Shell servers, monitors, workflows and MCP tasks must explicitly
+report `running` or `in_progress`; queued, scheduled, idle, completed and stopped
+services do not count. A service-only status does not reuse the finished reply’s
+working timer. These are CLI reports, not independent process-liveness probes. Unknown task types or older untyped background counts stay
 unknown until a fresh report clarifies them. A child's completion cannot finish
 an active parent or clear its permission request. Counts are reported snapshots,
 not process polling.
@@ -223,7 +227,7 @@ for two seconds to mark that completion read; right-click **Mark Unread** to res
 the ring. Read marks survive reloads, and the next completed turn gets a new ring.
 A permission indicator clears on the next recorded tool/prompt/completion event;
 it can remain red while an approved long-running tool finishes. A working/waiting event older
-than 15 minutes becomes unknown, including background-agent reports. Silence is
+than 15 minutes becomes unknown, including background-agent and service reports. Silence is
 not proof that an agent is still running. Hover shows the reason and last update.
 A confirmed finished turn stays green with its
 update age until another event arrives; idle remains idle.

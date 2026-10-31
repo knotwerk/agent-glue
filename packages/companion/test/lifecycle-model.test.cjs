@@ -12,13 +12,13 @@ const agent={type:'subagent',status:'running'},shell={type:'shell',status:'runni
 
 test('bounded exhaustive model: every sequence of five parent/background transitions',()=>{
  // Independent specification: foreground work/waiting outranks background
- // completion; only agent tasks count after a finished foreground reply.
+ // completion; running background work counts after a finished foreground reply.
  const actions=[
   ['request',at=>record('UserPromptSubmit',at),m=>({...m,foreground:'working'})],
   ['tool',at=>record('PostToolUse',at),m=>({...m,foreground:'working'})],
   ['permission',at=>record('PermissionRequest',at),m=>({...m,foreground:'waiting'})],
   ['reply',at=>stop(at,[]),()=>({foreground:'finished',agents:0})],
-  ['server',at=>stop(at,[shell]),()=>({foreground:'finished',agents:0})],
+  ['server',at=>stop(at,[shell]),()=>({foreground:'finished',agents:1})],
   ['delegate',at=>stop(at,[agent]),()=>({foreground:'finished',agents:1})],
   ['child finished',at=>record('SubagentStop',at,{background_tasks:[]}),m=>({...m,agents:0})],
   ['interrupt',at=>record('Interrupt',at),()=>({foreground:'idle',agents:0})],
@@ -42,11 +42,13 @@ test('bounded exhaustive model: every sequence of five parent/background transit
  assert.equal(cases,59049);
 });
 
-test('background classification excludes services, completed jobs and scheduled wakeups',()=>{
+test('background classification includes running services, excludes completed jobs and scheduled wakeups',()=>{
  for(const type of ['shell','monitor','workflow','MCP task']){
   const event=stop(2000,[{type,status:'running',description:'secret',command:'private'}]);
-  assert.equal(summarize([record('UserPromptSubmit',1000),event],session,3000).status,'done',type);
-  assert.equal(event.agents,0);assert.doesNotMatch(JSON.stringify(event),/private|secret/);
+  assert.equal(summarize([record('UserPromptSubmit',1000),event],session,3000).status,'active',type);assert.equal(event.services,1);
+  assert.equal(event.agents,0);
+  for(const status of ['pending','queued','scheduled','idle','completed','failed','cancelled','stopped'])assert.equal(summarize([stop(2000,[{type,status}])],session,3000).status,'done',type+': '+status);
+  assert.equal(summarize([stop(2000,[{type}])],session,3000).status,'unknown');assert.doesNotMatch(JSON.stringify(event),/private|secret/);
  }
  for(const type of ['subagent','teammate','cloud session']){
   for(const status of ['running','pending','queued','in_progress'])assert.equal(summarize([stop(2000,[{type,status}])],session,3000).status,'active');
@@ -57,6 +59,15 @@ test('background classification excludes services, completed jobs and scheduled 
  }
  assert.equal(summarize([record('Stop',2000,{session_crons:[{prompt:'secret'}]})],session,3000).status,'done');
  assert.equal(summarize([{...record('Stop',2000),background:10}],session,3000).status,'unknown','old untyped counts cannot claim ten busy agents');
+});
+
+test('service reports expire, stop explicitly, and never borrow the foreground turn timer',()=>{
+ const running=stop(2000,[shell]);
+ const state=summarize([record('UserPromptSubmit',1000),running],session,3000);
+ assert.equal(state.status,'active');assert.equal(state.services,1);assert.equal(state.since,undefined);assert.match(state.label,/services reported running/);
+ assert.equal(summarize([running],session,1000000).status,'unknown','a stale running report is not a heartbeat');
+ const finished=stop(4000,[{...shell,status:'completed'}]);assert.equal(summarize([running,finished],session,5000).status,'done');
+ const {services,...old}=running;assert.equal(summarize([old],session,3000).status,'unknown','v0.1.83 omitted service states; do not infer green from its zero agents');
 });
 
 test('children are tracked separately, cannot clear another child, and can require user input',()=>{
@@ -171,12 +182,12 @@ test('four independent accounts recover mixed colours through journals and a fre
  }
 });
 
-test('version-three caches replay typed background metadata and keep the journal untouched',async()=>{
+test('version-four caches replay service metadata and keep the journal untouched',async()=>{
  const base=tempDir('lifecycle-v4'),now=Date.now(),dir=path.join(base,key('10','%2'));
  await writeEvent(base,stop(now,[shell]));const first=new Lifecycle(base);await first.refresh([session]);
  const file=path.join(dir,'state.json'),cache=JSON.parse(await fs.readFile(file));
- cache.version=3;cache.events=cache.events.map(({agents,uncertain,...e})=>e);cache.state={status:'active'};await fs.writeFile(file,JSON.stringify(cache));
+ cache.version=4;cache.events=cache.events.map(({services,...e})=>e);cache.state={status:'active'};await fs.writeFile(file,JSON.stringify(cache));
  const journal=await fs.readFile(path.join(dir,'events.jsonl'));
- const reloaded=new Lifecycle(base);await reloaded.refresh([session]);assert.equal(reloaded.get('fixture').status,'done');
+ const reloaded=new Lifecycle(base);await reloaded.refresh([session]);assert.equal(reloaded.get('fixture').status,'active');assert.equal(reloaded.get('fixture').services,1);
  assert.deepEqual(await fs.readFile(path.join(dir,'events.jsonl')),journal);
 });

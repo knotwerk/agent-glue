@@ -3,7 +3,7 @@ const fs=require('node:fs/promises'),path=require('node:path');
 const {EVENTS,root,key,threadKey,storedEvent,storedThreadEvent,atomicJson}=require('./lifecycle-hook.cjs');
 const NO_EVENTS='No lifecycle events yet. Review Agent Glue hooks in /hooks. For Codex shared-server sessions, right-click → Link Codex Status using the Session ID from /status.';
 const REPLAY_BYTES=2*1024*1024;
-const CACHE_VERSION=4; // Replay with conversation-scoped slots and typed background work.
+const CACHE_VERSION=5; // Replay service states stripped by older hosts.
 const MAX_EVENTS=1024;
 const CHILD_EVENTS=new Set(['SubagentActivity','SubagentBlocked','SubagentStop']);
 const EVENT_ORDER=['SessionStart','UserPromptSubmit','PreToolUse','PostToolUse','Notification','PermissionRequest','SubagentActivity','SubagentBlocked','SubagentStop','Stop','Interrupt','SessionEnd'];
@@ -82,7 +82,7 @@ function summarize(events,session,now=Date.now()){
  const liveChildren=[...children.values()].filter(e=>e.at>childrenAfter&&e.event!=='SubagentStop').sort(compareEvents);
  const blockedChild=liveChildren.filter(e=>e.event==='SubagentBlocked').at(-1);
  const activeChild=liveChildren.filter(e=>e.event==='SubagentActivity').at(-1);
- let status,reason,label,at=main?.at||latest.at,agents;
+ let status,reason,label,at=main?.at||latest.at,agents,services;
  if(!main){status=blockedChild?'blocked':activeChild?'active':'unknown';at=(blockedChild||activeChild||latest).at;label=status==='unknown'?'Child update received; waiting for the main agent status':'Child agent '+(status==='active'?'working':'waiting for you')+'; parent status unavailable';}
  else if(main.event==='SessionStart'){
   status=blockedChild?'blocked':activeChild?'active':'idle';label=blockedChild?'Child agent waiting for you':activeChild?'Child agent working':'Idle';at=(blockedChild||activeChild||main).at;
@@ -92,12 +92,12 @@ function summarize(events,session,now=Date.now()){
  else if(main.event!=='Stop'){
   status=blockedChild?'blocked':'active';label=blockedChild?'Child agent waiting for you':'Working';at=Math.max(at,(blockedChild||activeChild)?.at||0);
  }else{
-  // A typed snapshot is authoritative only about background agents. Legacy
-  // counts included shell servers/watchers and cannot establish agent activity.
-  agents=snapshot?.agents;
-  const uncertain=snapshot?(snapshot.uncertain??(snapshot.background>0?1:0)):0;
+  // Only explicitly reported running services count. Version 0.1.83 did
+  // not retain service states, so its omitted counts cannot prove completion.
+  agents=snapshot?.agents;services=snapshot?.services;
+  const uncertain=snapshot?((snapshot.uncertain??(snapshot.background>0?1:0))||(services===undefined&&snapshot.background>(agents||0)?1:0)):0;
   if(blockedChild){status='blocked';label='Child agent waiting for you';at=blockedChild.at;}
-  else if(activeChild||agents>0){status='active';label=activeChild?'Child agent working':'Background agents working ('+agents+')';at=activeChild?.at||snapshot.at;}
+  else if(activeChild||agents>0||services>0){status='active';label=activeChild?'Child agent working':[agents>0?'Background agents working ('+agents+')':'',services>0?'Background services reported running ('+services+')':''].filter(Boolean).join('; ');at=activeChild?.at||snapshot.at;}
   else if(uncertain){status='unknown';reason='unclassified-background';label='Reply finished; background job types are unknown. Waiting for a fresh status event.';at=snapshot.at;}
   else {status='done';label='Turn finished';}
  }
@@ -106,7 +106,7 @@ function summarize(events,session,now=Date.now()){
  const prompt=current.filter(e=>e.event==='UserPromptSubmit').at(-1);
  const ended=current.filter(e=>['Stop','Interrupt','SessionEnd'].includes(e.event)&&e!==main).at(-1);
  const since=prompt&&(!ended||prompt.at>ended.at)&&(main?.event!=='Stop'||agents>0)?prompt.at:undefined;
- return {status,label,at,since,event:main?.event||latest.event,...(reason?{reason}:{}),...(agents===undefined?{}:{agents})};
+ return {status,label,at,since,event:main?.event||latest.event,...(reason?{reason}:{}),...(agents===undefined?{}:{agents}),...(services===undefined?{}:{services})};
 }
 class Lifecycle{
  constructor(base=root()){this.base=base;this.rows=new Map();this.checkpoints=new Map();this.threadCheckpoints=new Map();}

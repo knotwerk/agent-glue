@@ -70,7 +70,7 @@ function registerSelector(vscode,context,sessionForTerminal=()=>undefined,status
   const name=sessionForTerminal(terminal),at=status(terminal).at;
   readTimer=setTimeout(()=>{
    if(!isOpen(terminal)||vscode.window.activeTerminal!==terminal||sessionForTerminal(terminal)!==name||status(terminal)?.status!=='done'||status(terminal).at!==at)return;
-   readCompletions[name]=at;void context.workspaceState?.update('terminalSelector.readCompletions',{...readCompletions});changed.fire();
+   readCompletions[name]=at;void context.workspaceState?.update('terminalSelector.readCompletions',{...readCompletions});changed.fire(terminal);
   },2000);
  };
  const statusIcon=(state,fresh)=>{const color=({active:'amber',blocked:'red',done:fresh?'green-new':'green'})[state.status]||'grey';const media=path.join(context.extensionPath||path.resolve(__dirname,'..'),'media');return {light:vscode.Uri.file(path.join(media,'status-'+color+'-light.svg')),dark:vscode.Uri.file(path.join(media,'status-'+color+'-dark.svg'))};};
@@ -82,19 +82,28 @@ function registerSelector(vscode,context,sessionForTerminal=()=>undefined,status
   },
   getTreeItem(terminal){
    if(!ids.has(terminal))ids.set(terminal,String(++nextId));
-   const selected=terminal===vscode.window.activeTerminal,location=terminal.creationOptions?.location;
+   const location=terminal.creationOptions?.location;
    const editor=location===2||Boolean(location&&typeof location==='object'&&'viewColumn' in location);
    const same=listed().filter(t=>t.name===terminal.name);
    const state=status(terminal),now=Date.now();
-   const age=at=>{const seconds=Math.max(0,Math.floor((now-at)/1000));return seconds<60?seconds+'s':Math.floor(seconds/60)+'m';};
+   const age=at=>{const minutes=Math.max(0,Math.floor((now-at)/60000));return minutes<1?'<1m':minutes+'m';};
    const elapsed=state?.status==='active'?(state.since?age(state.since):''):state?.at?age(state.at)+' ago':'';
    const description=[elapsed,editor?'Editor':'',same.length>1?'Tab '+(same.indexOf(terminal)+1):''].filter(Boolean).join(' · ');
    const group=children(terminal).length>0,split=parents.has(terminal),agent=Boolean(sessionForTerminal(terminal));
    const contextValue=agent?(group?'agentGlueAgentGroupTerminal':split?'agentGlueAgentSplitTerminal':'agentGlueAgentTerminal'):(group?'agentGlueGroupTerminal':split?'agentGlueSplitTerminal':'agentGlueTerminal');
    return {id:ids.get(terminal),label:terminal.name,description:description||undefined,contextValue,collapsibleState:group?2:0,
     iconPath:state?statusIcon(state,unread(terminal)):new vscode.ThemeIcon('terminal'),
-    tooltip:terminal.name+' — '+(selected?'selected terminal':'click to focus')+'\n'+(sessionForTerminal(terminal)||'Shell terminal')+'\n'+(state?state.label+(elapsed?' · '+elapsed:'')+(state.at?' · '+new Date(state.at).toLocaleTimeString():''):'Shell terminal')+(unread(terminal)?'\nNew completion — open this terminal to mark read':''),
     command:{command:'agentGlue.focusSelectorTerminal',title:'Focus terminal',arguments:[terminal]}};
+  },
+  async resolveTreeItem(item,terminal,token){
+   // Resolve the folder only on hover. Do not query tmux for every row/timer tick.
+   let cwd=terminal.shellIntegration?.cwd||terminal.creationOptions?.cwd;
+   try{cwd=await cwdForTerminal(terminal)||cwd;}catch{}
+   if(token?.isCancellationRequested||!isOpen(terminal))return item;
+   const folder=typeof cwd==='string'?cwd:cwd?.fsPath;
+   const state=status(terminal),elapsed=provider.getTreeItem(terminal).description;
+   item.tooltip=terminal.name+' — '+(terminal===vscode.window.activeTerminal?'selected terminal':'click to focus')+'\n'+(sessionForTerminal(terminal)||'Shell terminal')+(folder?'\nFolder: '+folder:'')+'\n'+(state?state.label+(elapsed?' · '+elapsed:'')+(state.at?' · '+new Date(state.at).toLocaleTimeString():''):'Shell terminal')+(unread(terminal)?'\nNew completion — open this terminal to mark read':'');
+   return item;
   },getParent:terminal=>{children();return parents.get(terminal);}};
  const dragAndDropController={dragMimeTypes:[mime],dropMimeTypes:[mime],
   handleDrag(source,transfer){dragged=source.filter(isOpen);transfer.set(mime,new vscode.DataTransferItem('terminals'));},
@@ -108,8 +117,22 @@ function registerSelector(vscode,context,sessionForTerminal=()=>undefined,status
    await context.workspaceState?.update('terminalSelector.order',saved);changed.fire();
   }};
  const tree=vscode.window.createTreeView('agentGlue.terminalSelector',{treeDataProvider:provider,showCollapseAll:false,dragAndDropController});
- let lastSignature,lastSelected;
- const refresh=()=>{const signature=listed().map(t=>{if(!ids.has(t))ids.set(t,String(++nextId));return [ids.get(t),t.name,sessionForTerminal(t),t===vscode.window.activeTerminal,JSON.stringify(status(t)),status(t)?.at||status(t)?.since?Math.floor(Date.now()/3000):''].join('|');}).join('\n');if(signature===lastSignature)return;lastSignature=signature;changed.fire();const terminal=vscode.window.activeTerminal,selectionChanged=terminal!==lastSelected;lastSelected=terminal;if(selectionChanged&&tree.visible&&terminal&&isOpen(terminal))void Promise.resolve(tree.reveal(terminal,{select:true,focus:false})).catch(()=>{});};
+ let lastStructure,lastSelected,rowSignatures=new Map();
+ const refresh=()=>{
+  const terminals=listed(),next=new Map();children();
+  for(const terminal of terminals){
+   const item=provider.getTreeItem(terminal);
+   // Heartbeat timestamps and hover-only details do not change a visible row.
+   // Refreshing the entire tree every three seconds dismisses VS Code hovers.
+   next.set(terminal,JSON.stringify([item.label,item.description,item.iconPath,item.contextValue,item.collapsibleState,sessionForTerminal(terminal)]));
+  }
+  const structure=terminals.map(t=>[ids.get(t),ids.get(parents.get(t))].join(':')).join('|');
+  if(structure!==lastStructure){lastStructure=structure;changed.fire();}
+  else for(const terminal of terminals)if(next.get(terminal)!==rowSignatures.get(terminal))changed.fire(terminal);
+  rowSignatures=next;
+  const terminal=vscode.window.activeTerminal,selectionChanged=terminal!==lastSelected;lastSelected=terminal;
+  if(selectionChanged&&tree.visible&&terminal&&isOpen(terminal))void Promise.resolve(tree.reveal(terminal,{select:true,focus:false})).catch(()=>{});
+ };
  const settingKey='terminalSelector.nativeTabs';
  let replaceNative=context.workspaceState?.get('terminalSelector.replaceNative',true)??true;
  async function hideNative(){
@@ -133,7 +156,7 @@ function registerSelector(vscode,context,sessionForTerminal=()=>undefined,status
   vscode.commands.registerCommand('agentGlue.markSelectorUnread',async terminal=>{
    if(!isOpen(terminal)||status(terminal)?.status!=='done')return;
    clearTimeout(readTimer);delete readCompletions[sessionForTerminal(terminal)];
-   await context.workspaceState?.update('terminalSelector.readCompletions',{...readCompletions});changed.fire();
+   await context.workspaceState?.update('terminalSelector.readCompletions',{...readCompletions});changed.fire(terminal);
   }),
   vscode.commands.registerCommand('agentGlue.newSelectorShell',async terminal=>{
    if(!isOpen(terminal))return;

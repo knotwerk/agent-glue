@@ -2,19 +2,19 @@
 const test=require('node:test'),assert=require('node:assert/strict');
 const {registerSelector}=require('../src/terminal-selector.cjs');
 function host(){
- const commands=new Map(),events={},calls=[],contexts=new Map(),shown=[],reveals=[];let changes=0;
+ const commands=new Map(),events={},calls=[],changesFor=[],contexts=new Map(),shown=[],reveals=[];let changes=0;
  const a={name:'Same',show:focus=>shown.push(['a',focus])},b={name:'Same',show:focus=>shown.push(['b',focus])};
  const disposable=()=>({dispose(){}});
  const tree={visible:true,reveal:async(...args)=>reveals.push(args),onDidChangeVisibility:fn=>{events.visibility=fn;return disposable();},dispose(){}};
- const vscode={Uri:{file:fsPath=>({fsPath})},EventEmitter:class{event=()=>{};fire(){changes++;}dispose(){}},ThemeColor:class{constructor(id){this.id=id;}},ThemeIcon:class{constructor(id,color){this.id=id;this.color=color;}},commands:{registerCommand:(id,fn)=>{commands.set(id,fn);return disposable();},executeCommand:async(...args)=>{if(args[0]==='setContext')contexts.set(args[1],args[2]);else calls.push(args);}},window:{terminals:[a,b],activeTerminal:a,createTreeView:()=>tree,showInformationMessage:async()=>{},showInputBox:async()=> 'Renamed'}};
+ const vscode={Uri:{file:fsPath=>({fsPath})},EventEmitter:class{event=()=>{};fire(element){changes++;changesFor.push(element);}dispose(){}},ThemeColor:class{constructor(id){this.id=id;}},ThemeIcon:class{constructor(id,color){this.id=id;this.color=color;}},commands:{registerCommand:(id,fn)=>{commands.set(id,fn);return disposable();},executeCommand:async(...args)=>{if(args[0]==='setContext')contexts.set(args[1],args[2]);else calls.push(args);}},window:{terminals:[a,b],activeTerminal:a,createTreeView:()=>tree,showInformationMessage:async()=>{},showInputBox:async()=> 'Renamed'}};
  for(const event of ['onDidOpenTerminal','onDidCloseTerminal','onDidChangeActiveTerminal','onDidChangeTerminalState'])vscode.window[event]=fn=>{events[event]=fn;return disposable();};
  const values=new Map();vscode.DataTransferItem=class {constructor(value){this.value=value;}};
  const context={subscriptions:[],workspaceState:{get:(k,d)=>values.get(k)||d,update:async(k,v)=>values.set(k,v)}};
- const selector=registerSelector(vscode,context,t=>t===a?'claude-a':'codex-b');return {vscode,selector,commands,calls,contexts,shown,reveals,a,b,context,values,events,changedCount:()=>changes};
+ const selector=registerSelector(vscode,context,t=>t===a?'claude-a':'codex-b');return {vscode,selector,commands,calls,changesFor,contexts,shown,reveals,a,b,context,values,events,changedCount:()=>changes};
 }
-test('selector identifies duplicate names by terminal identity and never focuses a closed tab',()=>{
+test('selector identifies duplicate names by terminal identity and never focuses a closed tab',async()=>{
  const h=host(),p=h.selector.provider;assert.notEqual(p.getTreeItem(h.a).id,p.getTreeItem(h.b).id);
- assert.equal(p.getTreeItem(h.a).description,'Tab 1');assert.match(p.getTreeItem(h.a).iconPath.dark.fsPath,/status-grey-dark.svg$/);assert.match(p.getTreeItem(h.b).iconPath.dark.fsPath,/status-grey-dark.svg$/);assert.match(p.getTreeItem(h.a).tooltip,/No lifecycle events/);
+ assert.equal(p.getTreeItem(h.a).description,'Tab 1');assert.match(p.getTreeItem(h.a).iconPath.dark.fsPath,/status-grey-dark.svg$/);assert.match(p.getTreeItem(h.b).iconPath.dark.fsPath,/status-grey-dark.svg$/);assert.match((await p.resolveTreeItem(p.getTreeItem(h.a),h.a)).tooltip,/No lifecycle events/);
  const item=p.getTreeItem(h.b);h.commands.get(item.command.command)(...item.command.arguments);assert.deepEqual(h.shown,[['b',false]]);
  h.vscode.window.terminals=[h.a];h.commands.get(item.command.command)(...item.command.arguments);assert.equal(h.shown.length,1);
 });
@@ -63,18 +63,18 @@ test('live status colors reflect the mapped session and native tabs setting is r
  const live=registerSelector(h.vscode,h.context,t=>t===h.a?'a':'b',name=>({status:name==='a'?'active':'blocked',label:name==='a'?'Working':'Waiting for you',since:Date.now()-61000}));
  await new Promise(resolve=>setImmediate(resolve));assert.equal(configured,false);
  assert.match(live.provider.getTreeItem(h.a).iconPath.dark.fsPath,/status-amber-dark.svg$/);assert.match(live.provider.getTreeItem(h.b).iconPath.dark.fsPath,/status-red-dark.svg$/);
- assert.match(live.provider.getTreeItem(h.a).tooltip,/1m/);
+ assert.match((await live.provider.resolveTreeItem(live.provider.getTreeItem(h.a),h.a)).tooltip,/1m/);
  await h.commands.get('agentGlue.resetTerminalSelector')();assert.equal(configured,true);
 });
 
-test('RAG rows show dots and timing without status words, and hidden terminals stay out',()=>{
+test('RAG rows show dots and timing without status words, and hidden terminals stay out',async()=>{
  const h=host();h.vscode.window.terminals.push({name:'Thinking',creationOptions:{hideFromUser:true}});
  const list=registerSelector(h.vscode,h.context,t=>t===h.a?'a':'b',name=>({status:name==='a'?'active':'done',label:'Reported',since:Date.now()-61000,at:Date.now()-5000}));
  assert.deepEqual(list.provider.getChildren(),[h.a,h.b]);
  assert.equal(list.provider.getTreeItem(h.a).description,'1m · Tab 1');
- assert.match(list.provider.getTreeItem(h.a).tooltip,/Reported · 1m/);
- assert.equal(list.provider.getTreeItem(h.b).description,'5s ago · Tab 2');
- assert.match(list.provider.getTreeItem(h.b).tooltip,/Reported · 5s ago/);
+ assert.match((await list.provider.resolveTreeItem(list.provider.getTreeItem(h.a),h.a)).tooltip,/Reported · 1m/);
+ assert.equal(list.provider.getTreeItem(h.b).description,'<1m ago · Tab 2');
+ assert.match((await list.provider.resolveTreeItem(list.provider.getTreeItem(h.b),h.b)).tooltip,/Reported · <1m ago/);
  assert.match(list.provider.getTreeItem(h.a).iconPath.light.fsPath,/status-amber-light.svg$/);
  assert.match(list.provider.getTreeItem(h.b).iconPath.dark.fsPath,/status-green-new-dark.svg$/);
 });
@@ -184,4 +184,25 @@ test('startup welcome switches to the empty state only when VS Code requests pro
  const welcome=require('../package.json').contributes.viewsWelcome.filter(v=>v.view==='agentGlue.terminalSelector');
  assert.ok(welcome.some(v=>v.contents==='Loading terminals…'&&v.when.includes('!agentGlue.terminalsReady')));
  assert.ok(welcome.some(v=>v.contents.includes('No terminals open.')&&v.when.startsWith('agentGlue.terminalsReady')));
+});
+
+test('hover resolves the full remote folder on demand and safely falls back for shells',async()=>{
+ const h=host();let lookups=0;
+ h.a.creationOptions={cwd:'/starting/folder'};
+ const list=registerSelector(h.vscode,h.context,()=> 'agent',()=>({status:'active',label:'Working'}),async()=>{lookups++;return {fsPath:'/remote/projects/current [folder]'};});
+ const item=list.provider.getTreeItem(h.a);list.refresh();assert.equal(lookups,0);assert.equal(item.tooltip,undefined);
+ await list.provider.resolveTreeItem(item,h.a,{});assert.match(item.tooltip,/Folder: \/remote\/projects\/current \[folder\]/);assert.equal(lookups,1);
+ assert.equal(item.label,'Same');assert.doesNotMatch(item.description||'',/folder/);
+ const fallback=registerSelector(h.vscode,h.context,()=>undefined,()=>undefined,async()=>{throw Error('temporarily unavailable');});
+ const shell=await fallback.provider.resolveTreeItem(fallback.provider.getTreeItem(h.a),h.a,{});assert.match(shell.tooltip,/Folder: \/starting\/folder/);
+ const canceled=await list.provider.resolveTreeItem(list.provider.getTreeItem(h.a),h.a,{isCancellationRequested:true});assert.equal(canceled.tooltip,undefined);
+});
+
+test('heartbeat and selection changes do not redraw rows; a colour change targets only its terminal',()=>{
+ const h=host(),now=Date.now();let at=now,state='active';
+ const list=registerSelector(h.vscode,h.context,t=>t===h.a?'a':'b',name=>({status:name==='a'?state:'idle',label:'Working',at,since:now-120000}));
+ list.refresh();h.changesFor.length=0;
+ at+=1000;list.refresh();assert.deepEqual(h.changesFor,[],'a new hook heartbeat cannot close the current hover');
+ h.vscode.window.activeTerminal=h.b;list.refresh();assert.deepEqual(h.changesFor,[],'selection is handled by reveal, not rebuilding both rows');
+ state='blocked';list.refresh();assert.deepEqual(h.changesFor,[h.a],'only the changed status row needs repainting');
 });
