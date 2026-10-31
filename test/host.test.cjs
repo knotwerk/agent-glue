@@ -143,6 +143,23 @@ test('activate registers every contributed command and the view provider', async
   assert.deepEqual(env.log.executed.filter(c=>c[0]!=='setContext'), [['agentGlue.companion.focus', { preserveFocus: true }]]);
 });
 
+test('manual Refresh retries terminal mappings and recovers saved status even when the selector is hidden',async t=>{
+ let mapped=false,refreshes=0;
+ const terminal={name:'Synthetic Codex',creationOptions:{},show(){}};
+ const api={sessionForTerminal:()=>mapped?'codex-fixture':undefined,refresh:async()=>{mapped=true;refreshes++;}};
+ const host=fakeHost({sessionsApi:api});host.vscode.window.terminals=[terminal];host.vscode.window.activeTerminal=terminal;
+ const env=await start(t,{host,sessions:cwd=>[session(cwd,{profile:'codex',sessionName:'codex-fixture',serverPid:'10',pane:'%2',created:'5',threadId:'fixture-chat'})]});
+ const {writeUnlinkedEvent}=require('../packages/companion/src/lifecycle-hook.cjs');
+ await writeUnlinkedEvent(path.join(env.context.globalStorageUri.fsPath,'lifecycle'),{event:'PermissionRequest',session:'fixture-chat',at:Date.now()});
+ const provider=env.log.providers.get('agentGlue.terminalSelector');
+ await env.log.commands.get('agentGlue.refreshResources')();
+ assert.equal(refreshes,1);assert.match(provider.getTreeItem(terminal).iconPath.dark.fsPath,/status-red-dark.svg$/);
+ await writeUnlinkedEvent(path.join(env.context.globalStorageUri.fsPath,'lifecycle'),{event:'Stop',session:'fixture-chat',at:Date.now()+1});
+ await env.log.commands.get('agentGlue.refreshResources')();
+ assert.equal(refreshes,2);assert.match(provider.getTreeItem(terminal).iconPath.dark.fsPath,/status-green-new-dark.svg$/);
+ assert.deepEqual(env.log.errors,[]);
+});
+
 test('activate does nothing in an untrusted workspace', async t => {
   const env = await start(t, { host: fakeHost({ trusted: false }) });
   assert.equal(env.log.commands.size, 0);

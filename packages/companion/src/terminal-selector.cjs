@@ -3,6 +3,8 @@ const path=require('node:path');
 // Native terminal controls; lifecycle status is deliberately not inferred here.
 function registerSelector(vscode,context,sessionForTerminal=()=>undefined,statusForSession=()=>({status:'unknown',label:'No lifecycle events yet'}),cwdForTerminal=terminal=>terminal.shellIntegration?.cwd||terminal.creationOptions?.cwd){
  if(!vscode.window.createTreeView)return;
+ let providerReady=false;
+ void Promise.resolve(vscode.commands.executeCommand('setContext','agentGlue.terminalsReady',false)).catch(()=>{});
  const changed=new vscode.EventEmitter(),ids=new WeakMap();let nextId=0;
  const mime='application/vnd.code.tree.agentglue.terminalselector';
  let saved=context.workspaceState?.get('terminalSelector.order',[])||[],ordered=[],dragged=[],restoredSessions=false;
@@ -72,7 +74,12 @@ function registerSelector(vscode,context,sessionForTerminal=()=>undefined,status
   },2000);
  };
  const statusIcon=(state,fresh)=>{const color=({active:'amber',blocked:'red',done:fresh?'green-new':'green'})[state.status]||'grey';const media=path.join(context.extensionPath||path.resolve(__dirname,'..'),'media');return {light:vscode.Uri.file(path.join(media,'status-'+color+'-light.svg')),dark:vscode.Uri.file(path.join(media,'status-'+color+'-dark.svg'))};};
- const provider={onDidChangeTreeData:changed.event,getChildren:children,
+ const provider={onDidChangeTreeData:changed.event,getChildren(parent){
+   // VS Code has requested real provider data. Until this point, the manifest's
+   // welcome content replaces its misleading "no data provider" startup message.
+   if(!providerReady){providerReady=true;void Promise.resolve(vscode.commands.executeCommand('setContext','agentGlue.terminalsReady',true)).catch(()=>{});}
+   return children(parent);
+  },
   getTreeItem(terminal){
    if(!ids.has(terminal))ids.set(terminal,String(++nextId));
    const selected=terminal===vscode.window.activeTerminal,location=terminal.creationOptions?.location;

@@ -85,7 +85,8 @@ on macOS, dictation and clipboard images.
   replace the native tab list. Hook events show amber working, red permission/input
   requested, green turn finished, and grey idle/unknown. Rows keep just the dot and
   timing; hover for details. A yellow ring around green marks an unread completion.
-  Claude stays amber when its reply reports unfinished background work.
+  Claude stays amber for reported unfinished agents; background servers and watchers
+  do not keep a finished reply amber.
   Recent child-agent tool activity also shows amber without replacing the parent's status.
   Open the terminal for two seconds to clear it, or right-click **Mark Unread** to
   bring it back. Read marks survive reloads. Right-click also offers **Rename
@@ -101,8 +102,9 @@ on macOS, dictation and clipboard images.
   Status events received before linking are retained without conversation content,
   so linking can immediately recover the latest state and recorded turn start.
   Missing events and ordinary working/waiting updates older than 15 minutes show unknown.
-  Explicitly reported unfinished background work stays amber; hover shows when an
-  old report last updated. Confirmed finished turns keep their timestamped completion state. This uses no AI calls
+  Old background counts without job types stay unknown until a fresh event arrives.
+  Refresh retries terminal mappings and replays saved events, including events whose
+  tmux lookup timed out. Confirmed finished turns keep their timestamped completion state. This uses no AI calls
   or conversation-history indexing. An append-only local event log supports
   recovery of the status cache without restarting sessions. Moving the selector back restores the previous
   native-tabs setting.

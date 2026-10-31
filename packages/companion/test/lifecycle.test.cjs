@@ -143,7 +143,7 @@ test('shared daemon hooks use an exact thread binding without inheriting a termi
 
 test('linking parses only a session ID and rejects stale pane identities',async()=>{
  const {parseThreadId,bindThread}=require('../src/lifecycle.cjs');const id='11111111-2222-3333-4444-555555555555';
- assert.equal(parseThreadId('Session: '+id),id);assert.equal(parseThreadId(id),id);assert.equal(parseThreadId('made up '+id),undefined);
+ assert.equal(parseThreadId('Session: '+id),id);assert.equal(parseThreadId('  Session ID: '+id),id);assert.equal(parseThreadId(id),id);assert.equal(parseThreadId('made up '+id),undefined);
  const calls=[];await bindThread(session,id,async(file,args)=>{calls.push(args);return {stdout:'10\x1f%2\x1f5\n'};});
  assert.deepEqual(calls[1],['set-option','-p','-t','%2','@agent_glue_thread_id',id]);
  await assert.rejects(bindThread(session,id,async()=>({stdout:'10\x1f%2\x1f6\n'})),/terminal changed/);
@@ -175,26 +175,26 @@ test('an exact conversation linked to two different panes cannot colour both as 
  assert.equal(lifecycle.get(session.sessionName).status,'unknown');assert.equal(lifecycle.get('other-terminal').status,'unknown');assert.match(lifecycle.get('other-terminal').label,/multiple terminals/);
 });
 
-test('Claude Stop remains amber while its reported background work is running, and keeps the turn timer',()=>{
+test('Claude Stop counts known running agents separately and keeps a fresh turn timer',()=>{
  const identity={server:'10',pane:'%2',created:'5'};
- const stop=eventRecord({hook_event_name:'Stop',session_id:'chat',background_tasks:[{id:'private-id',description:'private task',command:'secret shell command',status:'running'}],session_crons:[{prompt:'private prompt'}]},identity,2000);
+ const stop=eventRecord({hook_event_name:'Stop',session_id:'chat',background_tasks:[{id:'private-id',description:'private task',command:'secret shell command',type:'subagent',status:'running'}],session_crons:[{prompt:'private prompt'}]},identity,2000);
  assert.equal(stop.background,1);assert.doesNotMatch(JSON.stringify(stop),/private|secret|command|cron/);
  const events=[record('UserPromptSubmit',1000),stop];
- const state=summarize(events,session,3000);assert.equal(state.status,'active');assert.equal(state.since,1000);assert.match(state.label,/Background work/);
- const quiet=summarize(events,session,1000000);assert.equal(quiet.status,'active','explicit unfinished background work must not expire during a long task');
- assert.match(quiet.label,/last reported \(1\); no update for 16 min/);assert.equal(quiet.at,2000);assert.equal(quiet.since,1000);
+ const state=summarize(events,session,3000);assert.equal(state.status,'active');assert.equal(state.since,1000);assert.match(state.label,/Background agents/);
+ const quiet=summarize(events,session,1000000);assert.equal(quiet.status,'unknown','an old task count is not an activity heartbeat');
+ assert.equal(quiet.reason,'stale');assert.equal(quiet.at,2000);assert.equal(quiet.since,undefined);
  events.push(eventRecord({hook_event_name:'SubagentStop',session_id:'chat',agent_id:'child',background_tasks:[],last_assistant_message:'private'},identity,4000));
  assert.equal(summarize(events,session,5000).status,'done');
 });
 
-test('quiet background work stays amber across reload, and later completion or interruption clears it',async()=>{
+test('stale background reports stay unknown across reload, and explicit completion clears them',async()=>{
  const {tempDir}=require('../../../test/support/tmp.cjs');const base=tempDir('quiet-background'),now=Date.now(),started=now-40*60*1000;
- await writeEvent(base,record('UserPromptSubmit',started));await writeEvent(base,{...record('Stop',started+1000),background:7});
- const first=new Lifecycle(base);await first.refresh([session]);assert.equal(first.get(session.sessionName).status,'active');assert.match(first.get(session.sessionName).label,/last reported \(7\)/);
- const second=new Lifecycle(base);await second.refresh([session]);assert.equal(second.get(session.sessionName).status,'active');assert.equal(second.get(session.sessionName).since,started);
+ await writeEvent(base,record('UserPromptSubmit',started));await writeEvent(base,{...record('Stop',started+1000),background:7,agents:7,uncertain:0});
+ const first=new Lifecycle(base);await first.refresh([session]);assert.equal(first.get(session.sessionName).status,'unknown');assert.equal(first.get(session.sessionName).reason,'stale');
+ const second=new Lifecycle(base);await second.refresh([session]);assert.equal(second.get(session.sessionName).status,'unknown');assert.equal(second.get(session.sessionName).since,undefined);
  await writeEvent(base,{...record('Stop',now-1000),event:'SubagentStop',background:0});await second.refresh([session]);assert.equal(second.get(session.sessionName).status,'done');
  for(const event of ['Interrupt','SessionEnd']){
-  const state=summarize([record('UserPromptSubmit',started),{...record('Stop',started+1000),background:7},record(event,now)],session,now+1);
+  const state=summarize([record('UserPromptSubmit',started),{...record('Stop',started+1000),background:7,agents:7,uncertain:0},record(event,now)],session,now+1);
   assert.equal(state.status,event==='Interrupt'?'idle':'unknown');
  }
 });
@@ -210,19 +210,19 @@ test('a child finishing cannot turn an active or blocked parent green',()=>{
 
 test('background counts survive pane and unlinked journals, cache recovery, and final completion',async()=>{
  const {tempDir}=require('../../../test/support/tmp.cjs');const {writeUnlinkedEvent}=require('../src/lifecycle-hook.cjs');const base=tempDir('background-recovery'),now=Date.now();
- const linked={...session,threadId:'chat'};await writeUnlinkedEvent(base,{event:'Stop',session:'chat',at:now-2000,background:2});
+ const linked={...session,threadId:'chat'};await writeUnlinkedEvent(base,{event:'Stop',session:'chat',at:now-2000,background:2,agents:2,uncertain:0});
  const lifecycle=new Lifecycle(base);await lifecycle.refresh([linked]);assert.equal(lifecycle.get(session.sessionName).status,'active');
- await writeEvent(base,{...record('Stop',now-1000),background:1});await lifecycle.refresh([linked]);assert.equal(lifecycle.get(session.sessionName).status,'active');
+ await writeEvent(base,{...record('Stop',now-1000),background:1,agents:1,uncertain:0});await lifecycle.refresh([linked]);assert.equal(lifecycle.get(session.sessionName).status,'active');
  const second=new Lifecycle(base);await second.refresh([linked]);assert.equal(second.get(session.sessionName).status,'active');
  await writeEvent(base,{...record('Stop',now),background:0});await second.refresh([linked]);assert.equal(second.get(session.sessionName).status,'done');
 });
 
 test('upgrading replays an old host checkpoint that dropped background metadata',async()=>{
  const {tempDir}=require('../../../test/support/tmp.cjs');const {key}=require('../src/lifecycle-hook.cjs');const base=tempDir('background-cache-upgrade'),now=Date.now();
- await writeEvent(base,{...record('Stop',now),background:3});
+ await writeEvent(base,{...record('Stop',now),background:3,agents:3,uncertain:0});
  const first=new Lifecycle(base);await first.refresh([session]);
  const file=path.join(base,key('10','%2'),'state.json');const old=JSON.parse(await fs.readFile(file,'utf8'));
- old.version=1;old.events=old.events.map(({background,...event})=>event);old.state={status:'done'};await fs.writeFile(file,JSON.stringify(old));
+ old.version=1;old.events=old.events.map(({background,agents,uncertain,...event})=>event);old.state={status:'done'};await fs.writeFile(file,JSON.stringify(old));
  const upgraded=new Lifecycle(base);await upgraded.refresh([session]);assert.equal(upgraded.get(session.sessionName).status,'active');
 });
 

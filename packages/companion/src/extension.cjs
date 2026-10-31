@@ -427,7 +427,7 @@ function activate(context){
       case 'webApp':await appAction(message.id,message.action);break;
       case 'showWebApps':await showApps();break;
       case 'ready':await refresh();if(message.clientPlatform==='mac')await ensureDictation();publish();if(view===draftWebview)post(view,{type:'focusDraft'});break;
-      case 'refresh':cleared.delete(selected);await refresh();loadResources(true);break;
+      case 'refresh':cleared.delete(selected);await refreshLifecycle(true);await refresh();loadResources(true);break;
       case 'resourceTab':if(['files','prs','tasks'].includes(message.tab)){resourceTab=message.tab;loadResources();}break;
       case 'prFilter':if(resources.filters[message.filter]!==undefined){prFilter=message.filter;await context.workspaceState.update('prFilter',prFilter);loadResources();}break;
       case 'prSort':if(['title','number','updated','priority'].includes(message.sort)){prSort=message.sort;resourceItems=resources.sortItems(resourceItems,prSort);await context.workspaceState.update('prSort',prSort);}break;
@@ -594,10 +594,13 @@ function activate(context){
   });
   command('agentGlue.draft',openDraft);command('agentGlue.layout',layout);
   context.subscriptions.push(vscode.window.onDidChangeActiveTerminal(()=>{if(sidebar?.visible)void refresh();}));
-  let lifecyclePending=false;
-  async function refreshLifecycle(){
-    if(lifecyclePending||!terminalSelector?.visible)return;
-    lifecyclePending=true;try{await sessionsApi();const sessions=await core.sessions();await lifecycle.refresh(sessions);terminalSelector.refresh();}catch{}finally{lifecyclePending=false;}
+  let lifecyclePending;
+  async function refreshLifecycle(force=false){
+    if(!lifecycle||(!force&&!terminalSelector?.visible))return;
+    if(lifecyclePending){try{await lifecyclePending;}catch{}if(!force)return;}
+    lifecyclePending=(async()=>{const link=await sessionsApi();if(force)await link?.refresh?.();const sessions=await core.sessions();await lifecycle.refresh(sessions);terminalSelector.refresh();})();
+    const work=lifecyclePending;
+    try{await work;}catch(error){if(force)throw error;}finally{if(lifecyclePending===work)lifecyclePending=undefined;}
   }
   command('agentGlue.enableLiveStatus',async()=>{
     const results=await require('./lifecycle.cjs').install({source:path.join(context.extensionPath,'dist/lifecycle-hook.cjs'),base:lifecycle.base});

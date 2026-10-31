@@ -1,15 +1,18 @@
 'use strict';
 // Standalone hook. Never retain prompts, messages, tool inputs or transcript paths.
 const fs=require('node:fs/promises'),path=require('node:path'),crypto=require('node:crypto');
-const EVENTS=['SessionStart','UserPromptSubmit','PreToolUse','PostToolUse','PermissionRequest','Notification','Stop','SubagentStop','Interrupt','SessionEnd','SubagentActivity'];
+const EVENTS=['SessionStart','UserPromptSubmit','PreToolUse','PostToolUse','PermissionRequest','Notification','Stop','SubagentStop','Interrupt','SessionEnd','SubagentActivity','SubagentBlocked'];
 const root=()=>path.join(require('node:os').homedir(),'.local','state','agent-glue','lifecycle');
 const key=(server,pane)=>crypto.createHash('sha256').update(server+':'+pane).digest('hex');
 const threadKey=session=>crypto.createHash('sha256').update(session).digest('hex');
 function storedThreadEvent(value){
  if(!value||!EVENTS.includes(value.event)||typeof value.session!=='string'||!value.session||value.session.length>200||!Number.isSafeInteger(value.at)||value.at<0)return;
  const background=['Stop','SubagentStop'].includes(value.event)&&Number.isSafeInteger(value.background)&&value.background>=0&&value.background<=10000?value.background:undefined;
- if(value.event==='SubagentStop'&&background===undefined)return;
- return {event:value.event,session:value.session,at:value.at,...(background===undefined?{}:{background})};
+ const child=['SubagentActivity','SubagentBlocked','SubagentStop'].includes(value.event)&&/^[a-f0-9]{64}$/.test(value.child)?value.child:undefined;
+ const agents=background!==undefined&&Number.isSafeInteger(value.agents)&&value.agents>=0&&value.agents<=background?value.agents:undefined;
+ const uncertain=agents!==undefined&&Number.isSafeInteger(value.uncertain)&&value.uncertain>=0&&value.uncertain<=background-agents?value.uncertain:undefined;
+ if(value.event==='SubagentStop'&&background===undefined&&!child)return;
+ return {event:value.event,session:value.session,at:value.at,...(background===undefined?{}:{background}),...(agents===undefined||uncertain===undefined?{}:{agents,uncertain}),...(child?{child}:{})};
 }
 function storedEvent(value){
  if(!value||!EVENTS.includes(value.event)||typeof value.session!=='string'||!value.session||value.session.length>200||!/^\d{1,20}$/.test(value.server)||!/^%\d{1,20}$/.test(value.pane)||!/^\d{1,20}$/.test(value.created)||!Number.isSafeInteger(value.at)||value.at<0)return;
@@ -17,15 +20,28 @@ function storedEvent(value){
 }
 function inputEvent(input,now=Date.now()){
  if(!EVENTS.includes(input.hook_event_name)||typeof input.session_id!=='string'||input.session_id.length>200)return;
- // Child tools prove activity, but must not replace the parent's prompt,
- // permission or completion event. Retain no child ID or tool content.
+ // Child signals are separate from parent state. Hash IDs so a child's stop
+ // clears only its own activity; never retain names, tool content or raw IDs.
  const childActivity=Boolean(input.agent_id)&&['PreToolUse','PostToolUse'].includes(input.hook_event_name);
- if(input.agent_id&&!childActivity&&input.hook_event_name!=='SubagentStop')return;
+ const childBlocked=Boolean(input.agent_id)&&['PermissionRequest','Notification'].includes(input.hook_event_name);
+ if(input.agent_id&&!childActivity&&!childBlocked&&input.hook_event_name!=='SubagentStop')return;
  if(input.hook_event_name==='Notification'&&!['permission_prompt','elicitation_dialog'].includes(input.notification_type))return;
  // Claude's Stop/SubagentStop task list is scoped to the parent session.
- // Retain only its count, never task descriptions, commands or child messages.
+ // Count agent work separately: shell servers, monitors and scheduled jobs do
+ // not mean an agent is still responding. Unknown types stay explicitly unknown.
  const background=['Stop','SubagentStop'].includes(input.hook_event_name)&&Array.isArray(input.background_tasks)&&input.background_tasks.length<=10000?input.background_tasks.length:undefined;
- return storedThreadEvent({event:childActivity?'SubagentActivity':input.hook_event_name,session:input.session_id,at:now,background});
+ let agents,uncertain;
+ if(background!==undefined){
+  agents=0;uncertain=0;
+  for(const task of input.background_tasks){
+   if(['completed','complete','done','failed','cancelled','canceled','stopped'].includes(task?.status))continue;
+   if(['shell','monitor','workflow','MCP task'].includes(task?.type))continue;
+   if(['subagent','teammate','cloud session'].includes(task?.type)&&['running','pending','queued','in_progress'].includes(task?.status))agents++;
+   else uncertain++;
+  }
+ }
+ const child=typeof input.agent_id==='string'&&input.agent_id.length<=200?crypto.createHash('sha256').update(input.session_id+':'+input.agent_id).digest('hex'):undefined;
+ return storedThreadEvent({event:childActivity?'SubagentActivity':childBlocked?'SubagentBlocked':input.hook_event_name,session:input.session_id,at:now,background,agents,uncertain,child});
 }
 function eventRecord(input,identity,now=Date.now()){
  const event=inputEvent(input,now);if(event)return storedEvent({...event,server:String(identity.server),pane:identity.pane,created:String(identity.created)});
@@ -90,6 +106,9 @@ async function observe({base,input=process.stdin,exec=require('node:util').promi
   let text='';for await(const chunk of input){text+=chunk;if(text.length>1024*1024)throw Error('Oversized input');}
   const payload=JSON.parse(text),receivedAt=now();eventName=EVENTS.includes(payload.hook_event_name)?payload.hook_event_name:undefined;sessionId=typeof payload.session_id==='string'&&payload.session_id.length<=200?payload.session_id:undefined;stage='tmux_lookup';
   const metadata=inputEvent(payload,receivedAt);if(!metadata)return;
+  // Journal first: a transient ps/tmux timeout must not lose an event. A later
+  // refresh can recover it using an explicit link or an earlier ancestry match.
+  stage='storage';await writeUnlinkedEvent(base,metadata);stage='tmux_lookup';
   // Codex may reuse a shell environment snapshot containing another pane ID.
   // Match this hook's actual ancestry to pane roots; never trust TMUX_PANE as
   // identity, even when it happens to point at a still-live unrelated pane.
@@ -100,7 +119,7 @@ async function observe({base,input=process.stdin,exec=require('node:util').promi
   stage='tmux_identity';const identity=identityFromProcesses(panes.stdout,processes.stdout,pid,sessionId);
   // Preserve status-only events from a detached server until the user supplies
   // an exact conversation link. Never guess from a folder or ambient TMUX_PANE.
-  stage='storage';if(identity)await writeEvent(base,eventRecord(payload,identity,receivedAt));else await writeUnlinkedEvent(base,metadata);
+  stage='storage';if(identity)await writeEvent(base,eventRecord(payload,identity,receivedAt));
  }catch(error){
   // Only fixed reason codes, never exception text or hook input. Fail open even
   // when the diagnostic log itself cannot be written.

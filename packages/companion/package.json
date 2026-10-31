@@ -1,5 +1,5 @@
 {
-  "version": "0.1.82",
+  "version": "0.1.83",
   "activationEvents": [
     "onStartupFinished"
   ],
@@ -26,6 +26,23 @@
   "description": "Find agent files across projects, preview Markdown and HTML, review PRs, and track tasks beside your CLI terminals.",
   "main": "./dist/extension.cjs",
   "contributes": {
+    "viewsWelcome": [
+      {
+        "view": "agentGlue.terminalSelector",
+        "contents": "Loading terminals…",
+        "when": "!agentGlue.terminalsReady && isWorkspaceTrusted"
+      },
+      {
+        "view": "agentGlue.terminalSelector",
+        "contents": "No terminals open.\n[New Terminal](command:agentGlue.newSelectorTerminal)",
+        "when": "agentGlue.terminalsReady && isWorkspaceTrusted"
+      },
+      {
+        "view": "agentGlue.terminalSelector",
+        "contents": "Trust this workspace to show terminals.\n[Manage Workspace Trust](command:workbench.trust.manage)",
+        "when": "!isWorkspaceTrusted"
+      }
+    ],
     "commands": [
       {
         "command": "agentGlue.preview",

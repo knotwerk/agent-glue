@@ -35,10 +35,24 @@ maintainer’s explicit approval; elapsed time and passing checks are not approv
 - A known gap is recorded as a `todo` test with the reason. Remove `todo` when
   fixing it.
 
+### Status model coverage
+
+`lifecycle-model.test.cjs` enumerates all 59,049 five-event sequences over nine
+foreground/background transitions and all 7,776 five-event interleavings of two
+children working, waiting or stopping. Independent expected states are checked
+against both direct events and compacted, duplicated or reordered delivery.
+Targeted regressions cover account/conversation isolation, missing hooks, timeout
+recovery, cache upgrades, reloads, stale evidence, timers and read marks. This is
+bounded exhaustive testing, not a Lean proof or evidence that a live CLI emitted
+its hooks. Keep ingestion, storage, state rules and UI tests separate so a mocked
+colour cannot hide a broken event pipeline.
+
 ### Terminal UI regression test
 
 `npm run test:ui` tests the real selector in an isolated VS Code web workbench:
-rename the clicked terminal, working/completed colours, the unread ring, delayed
+delayed provider registration without the default warning, rename the clicked
+terminal, hook events through the real status reducer to amber/red/green dots,
+background-server completion, selected colours, the unread ring, delayed
 mark-as-read and Mark Unread. Its terminals are synthetic pseudoterminals; it
 starts no shell or agent and does not connect to tmux. It uses a separate home,
 profile and extension folder under ignored `_script_outputs/`, and closes only

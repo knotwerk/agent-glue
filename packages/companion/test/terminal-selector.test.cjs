@@ -2,15 +2,15 @@
 const test=require('node:test'),assert=require('node:assert/strict');
 const {registerSelector}=require('../src/terminal-selector.cjs');
 function host(){
- const commands=new Map(),events={},calls=[],shown=[],reveals=[];let changes=0;
+ const commands=new Map(),events={},calls=[],contexts=new Map(),shown=[],reveals=[];let changes=0;
  const a={name:'Same',show:focus=>shown.push(['a',focus])},b={name:'Same',show:focus=>shown.push(['b',focus])};
  const disposable=()=>({dispose(){}});
  const tree={visible:true,reveal:async(...args)=>reveals.push(args),onDidChangeVisibility:fn=>{events.visibility=fn;return disposable();},dispose(){}};
- const vscode={Uri:{file:fsPath=>({fsPath})},EventEmitter:class{event=()=>{};fire(){changes++;}dispose(){}},ThemeColor:class{constructor(id){this.id=id;}},ThemeIcon:class{constructor(id,color){this.id=id;this.color=color;}},commands:{registerCommand:(id,fn)=>{commands.set(id,fn);return disposable();},executeCommand:async(...args)=>calls.push(args)},window:{terminals:[a,b],activeTerminal:a,createTreeView:()=>tree,showInformationMessage:async()=>{},showInputBox:async()=> 'Renamed'}};
+ const vscode={Uri:{file:fsPath=>({fsPath})},EventEmitter:class{event=()=>{};fire(){changes++;}dispose(){}},ThemeColor:class{constructor(id){this.id=id;}},ThemeIcon:class{constructor(id,color){this.id=id;this.color=color;}},commands:{registerCommand:(id,fn)=>{commands.set(id,fn);return disposable();},executeCommand:async(...args)=>{if(args[0]==='setContext')contexts.set(args[1],args[2]);else calls.push(args);}},window:{terminals:[a,b],activeTerminal:a,createTreeView:()=>tree,showInformationMessage:async()=>{},showInputBox:async()=> 'Renamed'}};
  for(const event of ['onDidOpenTerminal','onDidCloseTerminal','onDidChangeActiveTerminal','onDidChangeTerminalState'])vscode.window[event]=fn=>{events[event]=fn;return disposable();};
  const values=new Map();vscode.DataTransferItem=class {constructor(value){this.value=value;}};
  const context={subscriptions:[],workspaceState:{get:(k,d)=>values.get(k)||d,update:async(k,v)=>values.set(k,v)}};
- const selector=registerSelector(vscode,context,t=>t===a?'claude-a':'codex-b');return {vscode,selector,commands,calls,shown,reveals,a,b,context,values,events,changedCount:()=>changes};
+ const selector=registerSelector(vscode,context,t=>t===a?'claude-a':'codex-b');return {vscode,selector,commands,calls,contexts,shown,reveals,a,b,context,values,events,changedCount:()=>changes};
 }
 test('selector identifies duplicate names by terminal identity and never focuses a closed tab',()=>{
  const h=host(),p=h.selector.provider;assert.notEqual(p.getTreeItem(h.a).id,p.getTreeItem(h.b).id);
@@ -174,4 +174,14 @@ test('right-click New Terminal creates an independent zsh in the clicked termina
 test('rename cancellation and closing while the name prompt is open leave all terminals unchanged',async()=>{
  const h=host();h.vscode.window.showInputBox=async()=>undefined;await h.commands.get('agentGlue.renameSelectorTerminal')(h.a);assert.deepEqual(h.calls,[]);
  h.vscode.window.showInputBox=async()=>{h.vscode.window.terminals=[h.a];return 'New name';};await h.commands.get('agentGlue.renameSelectorTerminal')(h.b);assert.deepEqual(h.calls,[]);assert.deepEqual(h.shown,[]);
+});
+
+
+test('startup welcome switches to the empty state only when VS Code requests provider data',()=>{
+ const h=host();assert.equal(h.contexts.get('agentGlue.terminalsReady'),false);
+ h.selector.refresh();assert.equal(h.contexts.get('agentGlue.terminalsReady'),false);
+ h.selector.provider.getChildren();assert.equal(h.contexts.get('agentGlue.terminalsReady'),true);
+ const welcome=require('../package.json').contributes.viewsWelcome.filter(v=>v.view==='agentGlue.terminalSelector');
+ assert.ok(welcome.some(v=>v.contents==='Loading terminals…'&&v.when.includes('!agentGlue.terminalsReady')));
+ assert.ok(welcome.some(v=>v.contents.includes('No terminals open.')&&v.when.startsWith('agentGlue.terminalsReady')));
 });

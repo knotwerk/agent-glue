@@ -208,24 +208,23 @@ when that start event is missing; tool events do not reset it. Other timestamps
 show time since the recorded update. Hidden VS Code tool terminals are
 excluded from the list.
 Green means the agent finished responding, not that all project work is complete.
-Claude replies that report unfinished background tasks stay amber. Its parent-scoped
-background count is also updated when a subagent finishes; that event cannot mark
-a still-working or permission-blocked parent finished. Counts are snapshots, not
-process polling. Older records lack this count and cannot be corrected retrospectively.
-Child-agent tool events are also retained as content-free activity signals. Recent
-child work can turn an older green completion amber without clearing the parent's
-permission request or treating a child's completion as the parent's completion.
-These signals preserve neither tool content nor child identifiers, and cannot
-recover activity discarded by earlier observer versions.
+Claude replies that report running subagents, teammates or cloud agents stay amber.
+Shell servers, monitors, workflows, MCP tasks and scheduled wakeups do not keep a
+finished reply amber. Unknown task types or older untyped background counts stay
+unknown until a fresh report clarifies them. A child's completion cannot finish
+an active parent or clear its permission request. Counts are reported snapshots,
+not process polling.
+Child tool and permission events are tracked separately using hashed identifiers,
+so one child's completion cannot clear another child's work. No raw child IDs,
+names, tool content or messages are retained. Events discarded by older observer
+versions cannot be reconstructed.
 A yellow ring marks an unread completion. Open the terminal and keep it selected
 for two seconds to mark that completion read; right-click **Mark Unread** to restore
 the ring. Read marks survive reloads, and the next completed turn gets a new ring.
 A permission indicator clears on the next recorded tool/prompt/completion event;
 it can remain red while an approved long-running tool finishes. A working/waiting event older
-than 15 minutes becomes unknown, except for explicitly reported unfinished background
-work: it stays amber until a later event updates it. Hover over an old background
-report to see how many minutes have passed without an update. This preserves the
-last reported work, not a guarantee that every background process is still alive.
+than 15 minutes becomes unknown, including background-agent reports. Silence is
+not proof that an agent is still running. Hover shows the reason and last update.
 A confirmed finished turn stays green with its
 update age until another event arrives; idle remains idle.
 
@@ -247,12 +246,16 @@ forks with an existing exact ID can reuse it. Relink when switching to a differe
 conversation in the same terminal. Direct CLI processes are matched through their
 actual process ancestry. Neither method reads conversation history or restarts agents.
 Events received without a terminal match are now kept in a separate status-only
-conversation journal. After linking, Agent Glue recovers that conversation's
+conversation journal before attempting the tmux lookup, so lookup timeouts do not
+lose events. After linking, Agent Glue recovers that conversation's
 latest status and any recorded turn start immediately. It does not guess the
-link from the folder, and conflicting links stay unknown.
+link from the folder, and conflicting links stay unknown. An earlier ancestry-verified
+parent event also provides an exact link for recovering later lookup failures.
+**Refresh** retries terminal mappings and replays these logs, even when the selector
+is hidden. It cannot recover events that the CLI never sent.
 
 The observer only stores event names, timestamps, session IDs, tmux identity and
-the reported background-task count
+aggregate background-task counts and hashed child identifiers
 under Companion's global storage. It discards prompt text, tool payloads and
 transcript paths and does not read CLI history. Each pane has an append-only
 `events.jsonl` journal and a replaceable `state.json` cache. Hooks flush each event
