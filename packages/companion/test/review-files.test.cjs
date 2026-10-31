@@ -6,7 +6,7 @@ const path=require('node:path');
 const {execFileSync}=require('node:child_process');
 const {gitProject}=require('../../../test/support/tmp.cjs');
 const review=require('../src/review-files.cjs');
-const {detail,html,discussionText}=require('../src/pull-request.cjs');
+const {detail,html,discussionText,openReviewDocument}=require('../src/pull-request.cjs');
 test('discussion references distinguish published PRs from local prepared drafts',()=>{
   assert.equal(discussionText({url:'https://github.com/a/b/pull/42'},{number:42,title:'Inspector: Keep selection'}),'Regarding PR #42 Inspector: Keep selection (https://github.com/a/b/pull/42): ');
   assert.equal(discussionText({local:true,bodyFile:'/repo/review.md'},{title:'Decision: Layout'}),'Regarding prepared draft Decision: Layout (/repo/review.md): ');
@@ -94,4 +94,80 @@ test('hosted review links cannot resolve symlinks into excluded memory directori
 test('ordinary source memory directories are reviewable without exposing agent metadata',()=>{
   assert.equal(review.safeRelative('src/memory/cache.ts'),true);
   for(const name of ['memory/private.md','.claude/memory/notes.md','src/.codex/history.json','.git/config','.local/inbox/file'])assert.equal(review.safeRelative(name),false,name);
+});
+
+const png=Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/a9sAAAAASUVORK5CYII=','base64');
+function imageFixture(){
+  const root=gitProject('review-inline-image'),git=args=>execFileSync('git',['-C',root,...args],{encoding:'utf8'}).trim();
+  git(['config','user.name','Test Fixture']);git(['config','user.email','fixture@example.invalid']);
+  fs.mkdirSync(path.join(root,'docs'));
+  fs.writeFileSync(path.join(root,'docs/shot.png'),png);fs.writeFileSync(path.join(root,'docs/review.html'),'<h1>Committed review</h1>');
+  git(['add','.']);git(['commit','-qm','first screenshot']);const base=git(['rev-parse','HEAD']);
+  const current=Buffer.concat([png,Buffer.from('committed second version')]);
+  fs.writeFileSync(path.join(root,'docs/shot.png'),current);
+  fs.symlinkSync('shot.png',path.join(root,'docs/alias.png'));
+  fs.writeFileSync(path.join(root,'docs/not-image.png'),'<script>not an image</script>');
+  git(['add','.']);git(['commit','-qm','second screenshot']);const head=git(['rev-parse','HEAD']);
+  const item={number:21,url:'https://github.com/a/b/pull/21'};
+  const pr={...item,title:'Review screenshots',headRefName:'feature/review',baseRefName:'main',headRefOid:head,baseRefOid:base,files:[]};
+  const exec=async(command,args,options)=>command==='gh'?{stdout:JSON.stringify(pr)}:require('../src/core.cjs').run(command,args,options);
+  return {root,git,base,head,current,item,pr,exec};
+}
+test('hosted inline screenshots use exact committed bytes in dirty and ancestor checkouts without relaxing document previews',async()=>{
+  const f=imageFixture(),ancestor=`https://github.com/a/b/blob/${f.base}/docs/shot.png`;
+  f.pr.body=`![Current](docs/shot.png)\n![Before](${ancestor})\n[Review](docs/review.html)`;
+  fs.writeFileSync(path.join(f.root,'docs/shot.png'),Buffer.concat([png,Buffer.from('uncommitted replacement')]));
+  fs.writeFileSync(path.join(f.root,'docs/review.html'),'<h1>Uncommitted review</h1>');
+  const lightweight=await detail(f.item,f.root,{exec:f.exec});
+  assert.ok(lightweight.documents.every(doc=>!doc.imageData),'sidebar discovery must remain image-free');
+  const result=await detail(f.item,f.root,{exec:f.exec,includeImages:true});
+  const current=result.documents.find(doc=>doc.image&&doc.revision===f.head),before=result.documents.find(doc=>doc.image&&doc.revision===f.base);
+  assert.equal(current.imageData,'data:image/png;base64,'+f.current.toString('base64'));
+  assert.equal(before.imageData,'data:image/png;base64,'+png.toString('base64'));
+  assert.equal(current.missing,true,'inline blob does not authorize the dirty working file');
+  assert.equal(before.missing,true,'no worktree at the ancestor is needed for inline evidence');
+  assert.equal(result.documents.find(doc=>doc.relative==='docs/review.html').missing,true,'HTML still requires a clean exact checkout');
+  const output=html(result.pr,result.documents);
+  assert.equal((output.match(/<img src="data:image\/png;base64/g)||[]).length,2);
+  assert.match(output,/img-src data:/);assert.ok(!output.includes('<img src="https:'));
+  const opened=[];
+  await openReviewDocument({env:{openExternal:async uri=>opened.push(uri)},Uri:{parse:value=>value}},{},current,f.root,new Map());
+  assert.deepEqual(opened,[current.githubUrl],'clicking unavailable working files retains the GitHub fallback');
+});
+test('hosted inline images reject unrelated commits, symlink entries, invalid signatures and unsafe or untracked files',async()=>{
+  const f=imageFixture(),unrelated=f.git(['commit-tree',f.git(['rev-parse','HEAD^{tree}']),'-m','Unrelated history']);
+  fs.writeFileSync(path.join(f.root,'docs/untracked.png'),png);
+  f.pr.body=`![Unrelated](https://github.com/a/b/blob/${unrelated}/docs/shot.png)\n![Alias](docs/alias.png)\n![Invalid](docs/not-image.png)\n![Untracked](docs/untracked.png)\n![Private](.codex/private.png)\n![Traversal](docs/%2e%2e/secret.png)\n![Remote](https://other.test/shot.png)\n![Unknown branch](https://github.com/a/b/blob/other/docs/shot.png)`;
+  const result=await detail(f.item,f.root,{exec:f.exec,includeImages:true});
+  assert.ok(result.documents.every(doc=>!doc.imageData));
+  assert.ok(result.documents.some(doc=>doc.revision===unrelated),'unavailable evidence retains its explicit reference');
+  assert.ok(!result.documents.some(doc=>doc.relative.includes('.codex')||doc.relative.includes('..')));
+});
+test('hosted images without a known commit or with unavailable objects never substitute local bytes',async()=>{
+  const f=imageFixture();f.pr.body='![Shot](docs/shot.png)';
+  for(const head of [undefined,'a'.repeat(40)]){
+    f.pr.headRefOid=head;
+    const result=await detail(f.item,f.root,{exec:f.exec,includeImages:true});
+    assert.ok(result.documents.every(doc=>!doc.imageData));
+  }
+});
+test('committed inline raster reads enforce per-image and total budgets before loading blobs',async()=>{
+  const head='a'.repeat(40),item={number:22,url:'https://github.com/a/b/pull/22'},limit=5*1024*1024;
+  const paths=['oversized.png','one.png','two.png','three.png','four.png','five.png'];
+  const pr={...item,title:'Bounded images',headRefOid:head,headRefName:'feature',body:paths.map(file=>`![${file}](${file})`).join('\n'),files:[]};
+  const ids=new Map(paths.map((file,index)=>[file,(index+1).toString(16).repeat(40)])),reads=[];
+  const data=Buffer.alloc(limit);png.copy(data);
+  const result=await detail(item,'/synthetic-repository',{includeImages:true,exec:async(command,args,options)=>{
+    if(command==='gh')return {stdout:JSON.stringify(pr)};
+    if(args.includes('worktree'))throw Error('no exact checkout');
+    assert.ok(args.includes('--no-replace-objects'));assert.ok(args.includes('--literal-pathspecs'));
+    if(args.includes('ls-tree'))return {stdout:`100644 blob ${ids.get(args.at(-1))}\t${args.at(-1)}\0`};
+    const operation=args[args.indexOf('cat-file')+1];
+    if(operation==='-t')return {stdout:'commit\n'};
+    if(operation==='-s')return {stdout:String(args.at(-1)===ids.get('oversized.png')?limit+1:limit)+'\n'};
+    assert.equal(operation,'blob');assert.equal(options.encoding,null);assert.equal(options.maxBuffer,limit);
+    reads.push(args.at(-1));return {stdout:data};
+  }});
+  assert.deepEqual(reads,['one.png','two.png','three.png','four.png'].map(file=>ids.get(file)));
+  assert.equal(result.documents.filter(doc=>doc.imageData).length,4);
 });

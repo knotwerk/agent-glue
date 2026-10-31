@@ -54,17 +54,46 @@ async function detail(item,root,{exec=core.run,includeImages=false}={}){
   if(reviewFiles.sha(pr.baseRefOid)&&reviewFiles.sha(pr.headRefOid))try{changed=await reviewFiles.changes(root,pr.baseRefOid,pr.headRefOid,{exec});}catch{}
   if(!changed.length)changed=(pr.files||[]).filter(f=>reviewFiles.safeRelative(f.path)).map(f=>({root,path:path.resolve(root,f.path),relative:f.path,label:f.path,group:'changes',missing:true,githubUrl:item.url+'/files'}));
   documents.push(...changed);
-  if(includeImages)await addImages(documents);
+  if(includeImages)await addImages(documents,{exec,committedRoot:root,headRevision:pr.headRefOid});
   return {pr,documents};
 }
-async function addImages(documents){
+async function addImages(documents,{exec=core.run,committedRoot,headRevision}={}){
   let bytes=0;
+  const revisions=new Map(),limit=5*1024*1024,total=20*1024*1024;
+  const git=(args,options={})=>exec('git',['--no-replace-objects','--literal-pathspecs','-C',committedRoot,...args],{timeout:10000,maxBuffer:1024,...options});
+  async function committedImage(doc){
+    if(!reviewFiles.sha(headRevision)||!reviewFiles.sha(doc.revision)||!reviewFiles.safeRelative(doc.relative))return;
+    if(!revisions.has(doc.revision)){
+      revisions.set(doc.revision,false);
+      const {stdout:type}=await git(['cat-file','-t',doc.revision]);
+      if(type.trim()!=='commit')return;
+      if(doc.revision!==headRevision)await git(['merge-base','--is-ancestor',doc.revision,headRevision]);
+      revisions.set(doc.revision,true);
+    }
+    if(!revisions.get(doc.revision))return;
+    const {stdout:tree}=await git(['ls-tree','-z',doc.revision,'--',doc.relative],{maxBuffer:65536});
+    const entries=tree.split('\0').filter(Boolean);
+    if(entries.length!==1)return;
+    const entry=/^(100644|100755) blob ([a-f0-9]{40})\t([\s\S]+)$/.exec(entries[0]);
+    if(!entry||entry[3]!==doc.relative)return; // No symlinks, submodules, directories or pathspec expansion.
+    const {stdout:sizeText}=await git(['cat-file','-s',entry[2]]);
+    const size=Number(sizeText.trim());
+    if(!/^\d+$/.test(sizeText.trim())||!Number.isSafeInteger(size)||size>limit||bytes+size>total)return;
+    const {stdout:data}=await git(['cat-file','blob',entry[2]],{encoding:null,maxBuffer:limit});
+    if(!Buffer.isBuffer(data)||data.length!==size)return;
+    return data;
+  }
   for(const doc of documents){
-    if(!doc.image||doc.missing||doc.group==='changes')continue;
+    if(!doc.image||doc.group==='changes'||(!committedRoot&&doc.missing))continue;
     try{
-      const file=await core.inside(doc.root,doc.path),stat=await fs.stat(file);
-      if(stat.size>5*1024*1024||bytes+stat.size>20*1024*1024)continue;
-      const data=await fs.readFile(file),ext=path.extname(file).toLowerCase();
+      let data,ext;
+      if(committedRoot){data=await committedImage(doc);ext=path.extname(doc.relative).toLowerCase();}
+      else{
+        const file=await core.inside(doc.root,doc.path),stat=await fs.stat(file);
+        if(stat.size>limit||bytes+stat.size>total)continue;
+        data=await fs.readFile(file);ext=path.extname(file).toLowerCase();
+      }
+      if(!data||data.length>limit||bytes+data.length>total)continue;
       const valid=ext==='.png'?data.subarray(0,8).equals(Buffer.from('89504e470d0a1a0a','hex')):['.jpg','.jpeg'].includes(ext)?data.subarray(0,3).equals(Buffer.from('ffd8ff','hex')):ext==='.gif'?/^GIF8[79]a$/.test(data.subarray(0,6).toString()):data.subarray(0,4).toString()==='RIFF'&&data.subarray(8,12).toString()==='WEBP';
       if(!valid)continue;bytes+=data.length;
       doc.imageData='data:image/'+(ext==='.jpg'||ext==='.jpeg'?'jpeg':ext.slice(1))+';base64,'+data.toString('base64');
