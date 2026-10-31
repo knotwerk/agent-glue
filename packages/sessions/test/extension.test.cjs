@@ -243,3 +243,15 @@ test('slow attachment storage does not block startup, and several tokens use one
  const h=host({sessions:()=>oneSession()+'codex-two\x1fTwo\x1f\x1f1700000000\x1f$2\x1f500\n',globalState:{get:()=>[],update:()=>{writes++;return new Promise(()=>{});}}});
  await completes(h.api.refresh());assert.equal(h.terminals.length,2);assert.equal(writes,1);
 });
+
+test('a burst of unchanged terminal state events causes no redundant process discovery',async()=>{
+ const h=host();await h.api.refresh();const before=h.calls.length;
+ for(let i=0;i<40;i++)h.listeners.change(h.terminals[0]);
+ await h.api.refresh();assert.equal(h.calls.length-before,3,'only the explicit refresh should scan');
+});
+
+test('state events still preserve renames of multiple terminals',async()=>{
+ const h=host({sessions:()=>oneSession()+'codex-two\x1fTwo\x1f\x1f1700000000\x1f$2\x1f500\n'});await h.api.refresh();
+ const [a,b]=h.terminals;a.name='Alpha renamed';b.name='Beta renamed';h.listeners.change(a);h.listeners.change(b);h.listeners.change(a);
+ await h.api.refresh();const titles=h.calls.filter(c=>c.file?.endsWith('agent-tmux-rename.zsh')).map(c=>c.args[1]);assert.deepEqual(titles,['alpha-renamed','beta-renamed']);
+});

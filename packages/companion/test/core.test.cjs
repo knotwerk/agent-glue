@@ -30,12 +30,13 @@ test('parseSessions keeps only well-formed agent panes', () => {
 
 test('sessions uses an injected exec with a read-only tmux listing', async () => {
   const calls = [];
-  const exec = async (cmd, args) => { calls.push([cmd, args]); return { stdout: line('$1', 'claude-a', '%1', '/p') + '\n' }; };
+  const exec = async (cmd, args, options) => { calls.push([cmd, args, options]); return { stdout: line('$1', 'claude-a', '%1', '/p') + '\n' }; };
   const result = await core.sessions(exec);
   assert.equal(result.length, 1);
   assert.equal(calls.length, 1);
   assert.equal(calls[0][0], 'tmux');
   assert.equal(calls[0][1][0], 'list-panes');
+  assert.equal(calls[0][2].timeout,1500);
   assert.ok(!calls[0][1].some(a => /send-keys|kill|capture/.test(a)));
 });
 

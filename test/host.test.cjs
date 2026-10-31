@@ -108,7 +108,7 @@ function session(cwd, over = {}) {
   return { id: '$1', name: 'Fix bug', sessionName: 'claude-main', pane: '%1', cwd, profile: 'claude', available: true, ...over };
 }
 
-async function start(t, { sessions, capture = 'Wrote docs/plan.md and ./notes.html\n', sessionsApi, host } = {}) {
+async function start(t, { sessions, capture = 'Wrote docs/plan.md and ./notes.html\n', sessionsApi, host, initialState } = {}) {
   const project = gitProject('host');
   fs.mkdirSync(path.join(project,'docs'));
   fs.writeFileSync(path.join(project,'docs/plan.md'),'# Plan');
@@ -119,7 +119,7 @@ async function start(t, { sessions, capture = 'Wrote docs/plan.md and ./notes.ht
   const saved = { sessions: core.sessions, run: core.run };
   core.sessions = async () => (sessions ? sessions(project) : [session(project)]);
   core.run = async (cmd, args) => { calls.push([cmd, args]); return { stdout: capture }; };
-  const context = { globalStorageUri:{fsPath:path.join(project,'.status-storage')}, subscriptions: [], workspaceState: memento(), globalState: memento(), extensionUri: { fsPath: companionDir }, extensionPath: companionDir };
+  const context = { globalStorageUri:{fsPath:path.join(project,'.status-storage')}, subscriptions: [], workspaceState: memento(initialState?.(project)), globalState: memento(), extensionUri: { fsPath: companionDir }, extensionPath: companionDir };
   extension.activate(context);
   t.after(async () => { for (const s of context.subscriptions) await s.dispose?.(); core.sessions = saved.sessions; core.run = saved.run; });
   return { ...h, project, context, calls };
@@ -128,7 +128,7 @@ async function start(t, { sessions, capture = 'Wrote docs/plan.md and ./notes.ht
 async function openSidebar(env) {
   const view = fakeWebview();
   env.log.providers.get('agentGlue.companion').resolveWebviewView(view);
-  view.webview.send({ type: 'ready' });
+  await view.webview.send({ type: 'ready' });
   await waitFor(view, m => m.type === 'state' && m.state.sessions.length > 0, 'initial state');
   return view;
 }
@@ -1067,4 +1067,24 @@ test('native terminal badge binding uses the chosen terminal without renaming or
  const count=provider.bindings.size;env.vscode.window.showQuickPick=async()=>undefined;
  await view.send({type:'bindTerminalActivity',uris:['vscode-terminal:/fixture/10']});assert.equal(provider.bindings.size,count);
  await view.send({type:'bindTerminalActivity',uris:['file:///example']});assert.equal(provider.bindings.size,count);
+});
+
+test('Sessions activation starts before any sidebar or timer, and concurrent callers share it',async t=>{
+ let calls=0,resolveApi;const apiPromise=new Promise(resolve=>{resolveApi=resolve;});
+ const host=fakeHost();host.vscode.extensions.getExtension=()=>({activate:()=>{calls++;return apiPromise;}});
+ const env=await start(t,{host});await new Promise(resolve=>setImmediate(resolve));assert.equal(calls,1,'activate before any webview is opened');
+ const view=fakeWebview();env.log.providers.get('agentGlue.companion').resolveWebviewView(view);view.send({type:'ready'});
+ await new Promise(resolve=>setImmediate(resolve));assert.equal(calls,1,'do not activate twice while pending');
+ resolveApi({sessionForTerminal:()=>undefined});await waitFor(view,m=>m.type==='state'&&m.state.sessions.length,'session state');
+ assert.equal(calls,1);
+});
+
+test('first sidebar render exposes cached files while fresh terminal capture is pending',async t=>{
+ const env=await start(t,{initialState:project=>({selected:'$1',draft:{id:'draft',text:'',attachments:[],targetId:'$1',root:project},files:{'$1':[{id:path.join(project,'docs/plan.md'),path:path.join(project,'docs/plan.md'),label:'Cached plan'}]}})});const cached=path.join(env.project,'docs/plan.md');
+ let release;const pending=new Promise(resolve=>{release=resolve;});core.run=async()=>pending;
+ const view=fakeWebview();env.log.providers.get('agentGlue.companion').resolveWebviewView(view);
+ await waitFor(view,m=>m.type==='state'&&m.state.sessions.length,'early session state');
+ assert.equal(lastState(view).selectedSessionId,'$1');
+ assert.equal(lastState(view).files[0].path,cached);assert.equal(lastState(view).files[0].label,'Cached plan');
+ release({stdout:'docs/plan.md'});await view.send({type:'ready'});
 });

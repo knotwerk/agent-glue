@@ -26,6 +26,9 @@ MIT licensed, free to reuse and modify.
   connections. New attachments wait while an unidentified terminal is starting,
   so a slow launcher does not create a duplicate. Unchanged terminal names do not
   trigger extra process scans.
+  Companion starts Sessions immediately when it activates, without waiting for
+  the sidebar to load. Startup stage durations are logged with the
+  `[Agent Glue startup]` prefix, using timings and counts only.
 - Newly attached tabs carry a private lookup token in their launch options, with
   a small mapping in VS Code extension storage. When those options survive a
   reload, Sessions can match the tab to the same live tmux session before its

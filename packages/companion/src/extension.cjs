@@ -14,6 +14,9 @@ const {renderSidebar,renderDraft}=require('./views.cjs');
 const {openPreview}=require('./preview.cjs');
 function activate(context){
   if(!vscode.workspace.isTrusted)return;
+  const activatedAt=Date.now();let firstRefresh=true,firstView=true;
+  const startupLog=(stage,details='')=>console.info('[Agent Glue startup] Companion '+stage+': '+(Date.now()-activatedAt)+'ms '+details);
+  startupLog('activated');
   const views=new Set(),panels=new Map(),uploads=new core.Uploads();
   const browserLinks=new BrowserLinks({mermaidPath:path.join(context.extensionPath,'dist/mermaid.js')});
   context.subscriptions.push(browserLinks);
@@ -26,7 +29,7 @@ function activate(context){
     if(file.hidden&&!/^\s*\[remove\]/i.test(file.lastDirective||''))file.hidden=false;
   }
   let draft=context.workspaceState.get('draft',{id:crypto.randomUUID(),text:'',attachments:[]});
-  let refreshWork,refreshAgain=false,lastMappedTerminal,api,status='',connectionStatus='',helperSetup;
+  let refreshWork,refreshAgain=false,lastMappedTerminal,api,apiWork,status='',connectionStatus='',helperSetup;
   let dictationRequest,followTarget=false,clipboardBusy=false,manualSelection;
   const uploadBatches=new Map();
   const uploadBusy=()=>clipboardBusy||uploadBatches.size||uploads.pending.size||uploads.active.size;
@@ -260,15 +263,19 @@ function activate(context){
   }
   async function sessionsApi(){
     if(api)return api;
+    if(apiWork)return apiWork;
     const extension=vscode.extensions.getExtension('knotwerk.agent-glue-sessions');
-    if(extension)try{api=await extension.activate();terminalSelector?.refresh();}catch{api=undefined;}
-    return api;
+    if(!extension)return;
+    apiWork=Promise.resolve().then(()=>extension.activate()).then(value=>{api=value;terminalSelector?.refresh();startupLog('Sessions API ready');return api;}).catch(()=>{api=undefined;}).finally(()=>{apiWork=undefined;});
+    return apiWork;
   }
   function refresh(){
     if(refreshWork){refreshAgain=true;return refreshWork;}
+    const report=firstRefresh;firstRefresh=false;
     refreshWork=(async()=>{
     try{
       sessionList=await core.sessions();
+      if(report)startupLog('session query', 'sessions='+sessionList.length);
       const link=await sessionsApi();
       const activeTerminal=vscode.window.activeTerminal;
       const activeName=link?.sessionForTerminal(activeTerminal);
@@ -281,6 +288,7 @@ function activate(context){
       if(previous!==selected){cleared.delete(previous);followTarget=true;}
       if(!selected&&!vscode.window.activeTerminal&&sessionList.length)selected=sessionList[0].id;
       const session=byId(selected);
+      if(report&&(files[selected]||[]).length&&draft.root&&draft.targetId===selected){publish();startupLog('cached files rendered');}
       if(session&&sidebar?.visible&&!cleared.has(selected)){
         const {stdout}=await core.run('tmux',['capture-pane','-p','-J','-t',session.pane,'-S','-2000'],{maxBuffer:1024*1024});
         if(vscode.window.activeTerminal!==activeTerminal){refreshAgain=true;return;}
@@ -302,9 +310,9 @@ function activate(context){
       if(sidebar?.visible)loadResources();
       if(sidebar?.visible||appsPanel?.visible)void apps.refresh(sessionList).then(()=>{renderAppsPanel();publish();}).catch(error=>{status='Web apps: '+error.message;publish();});
       connectionStatus=link?'':'Sessions extension unavailable: previews and Copy still work. Enable Sessions for terminal focus and paste.';
-      await save();publish();
+      publish();if(report)startupLog('first refresh rendered');await save();
     }catch(error){status=error.message;publish();}
-    })().finally(()=>{refreshWork=undefined;if(refreshAgain){refreshAgain=false;void refresh();}});
+    })().finally(()=>{if(report)startupLog('first refresh finished');refreshWork=undefined;if(refreshAgain){refreshAgain=false;void refresh();}});
     return refreshWork;
   }
   async function terminal(id){
@@ -536,6 +544,7 @@ function activate(context){
     await save();publish();
   }
   function setup(view,isDraft){
+    if(!isDraft&&firstView){firstView=false;startupLog('sidebar resolved');}
     views.add(view);
     view.options={enableScripts:true,localResourceRoots:[vscode.Uri.joinPath(context.extensionUri,'media')]};
     view.html=(isDraft?renderDraft:renderSidebar)({nonce:crypto.randomBytes(20).toString('hex'),cspSource:view.cspSource,scriptUri:view.asWebviewUri(vscode.Uri.joinPath(context.extensionUri,'media/companion.js')),styleUri:view.asWebviewUri(vscode.Uri.joinPath(context.extensionUri,'media/companion.css'))});
@@ -597,6 +606,9 @@ function activate(context){
   const interval=setInterval(()=>{for(const [view,batch] of uploadBatches)if(Date.now()-batch.lastActivity>120000)uploadBatches.delete(view);void uploads.expire();if(terminalActivity)publish();void refreshLifecycle();if(sidebar?.visible||appsPanel?.visible)void refresh();},3000);
   context.subscriptions.push({dispose(){clearInterval(interval);void uploads.close();for(const panel of panels.values())panel.dispose();draftPanel?.dispose();appsPanel?.dispose();}});
   // Reveal the companion on startup without taking keyboard focus from the editor or terminal.
+  // Activate terminal restoration now, independently of webview creation,
+  // the first tmux query, and the three-second status polling interval.
+  void sessionsApi();
   void vscode.commands.executeCommand('agentGlue.companion.focus',{preserveFocus:true}).catch(error=>{
     vscode.window.showErrorMessage(`Unable to open Agent Glue: ${error.message}`);
   });

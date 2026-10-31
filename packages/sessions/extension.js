@@ -54,6 +54,10 @@ const lastKnownNames = new Map();
 
 let operationQueue = Promise.resolve();
 const pendingPolls = new Map();
+let activatedAt, firstDiscovery = true;
+function startupLog(stage, details = '') {
+    console.info(`[Agent Glue startup] Sessions ${stage}: ${Date.now() - activatedAt}ms ${details}`);
+}
 
 function resolveScriptRoot() {
     return vscode.workspace.workspaceFolders?.[0]?.uri.fsPath || require('os').homedir();
@@ -318,9 +322,12 @@ function terminalSessionFromPid(terminal, pid, clientSessionsByPid, liveSessionN
 }
 
 async function refreshTerminalMappings() {
+    const report = firstDiscovery;
+    firstDiscovery = false;
     const terminals = [...vscode.window.terminals];
     terminals.forEach(observeTerminalPid);
     const sessions = await getAgentSessions();
+    if (report) startupLog('session query', `ok=${Boolean(sessions)} tabs=${terminals.length}`);
     if (!sessions) return { complete: false, terminals };
     const liveBySession = new Map(sessions.map(item => [item.session, item]));
     const liveSessionNames = new Set(liveBySession.keys());
@@ -330,6 +337,7 @@ async function refreshTerminalMappings() {
     // table. Validate saved identities now; resolution triggers a fresh pass.
     const clientSessionsByPid = [...snapshotPids.values()].some(pid => pid !== undefined)
         ? await getTmuxClientSessionsByPid() : new Map();
+    if (report) startupLog('client query', `ok=${Boolean(clientSessionsByPid)}`);
     if (!clientSessionsByPid) return { complete: false, terminals };
     const currentTerminals = new Set(vscode.window.terminals);
 
@@ -388,6 +396,7 @@ async function refreshTerminalMappings() {
             && !terminal.creationOptions?.hideFromUser && !terminal.creationOptions?.pty
             && (record.pending || record.failed || record.pid !== snapshotPids.get(terminal));
     });
+    if (report) startupLog('mapping', `mapped=${terminalSessions.size} pending=${unresolved}`);
     return { complete: true, unresolved, sessions, liveBySession, liveSessionNames, terminals };
 }
 
@@ -564,6 +573,8 @@ function activate(context) {
         vscode.window.showWarningMessage('Disable the original Tmux Claude/Codex Attach extension before enabling Agent Glue Sessions.');
         return;
     }
+    activatedAt = Date.now();
+    startupLog('activated');
     attachmentState = context.globalState;
     const savedAttachments = attachmentState.get?.(ATTACHMENTS_KEY);
     attachments = new Map((Array.isArray(savedAttachments) ? savedAttachments.slice(-MAX_ATTACHMENTS) : [])
@@ -587,10 +598,11 @@ function activate(context) {
             void schedule('attachAll', () => attachSessions({ quiet: false, force: true }));
         }),
         vscode.window.onDidChangeTerminalState((terminal) => {
-            void schedule('terminalState', async () => {
-                await persistTerminalRename(terminal);
-                await attachSessions({ quiet: true });
-            });
+            // Restore emits state changes even when no name changed. Opening
+            // tabs and PID resolution have their own discovery events; avoid
+            // another full scan here while preserving actual rename operations.
+            if (terminalNames.get(terminal) === normalizeName(terminal.name)) return;
+            void schedule('terminalState', () => persistTerminalRename(terminal));
         }),
         vscode.window.onDidCloseTerminal((terminal) => {
             forgetTerminal(terminal);
@@ -601,7 +613,10 @@ function activate(context) {
         })
     );
 
-    void schedule('startup', () => attachSessions({ quiet: true }));
+    void schedule('startup', async () => {
+        await attachSessions({ quiet: true });
+        startupLog('initial pass finished', `mapped=${terminalSessions.size}`);
+    });
 
     const renamePoll = setInterval(() => {
         void schedule('renamePoll', () => persistTerminalRename(vscode.window.activeTerminal));
