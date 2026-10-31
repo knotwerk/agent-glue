@@ -1,4 +1,5 @@
 'use strict';
+const {isOrderedTitle}=require('./review-label.cjs');
 const {mainEditorColumn}=require('./editor-target.cjs');
 const fs=require('node:fs/promises');
 const path=require('node:path');
@@ -151,7 +152,7 @@ function html(pr,documents){
   const comments=[...(pr.comments||[]),...(pr.reviews||[]).filter(c=>c.body)].sort((a,b)=>(a.createdAt||a.submittedAt||'').localeCompare(b.createdAt||b.submittedAt||''));
   return `<!doctype html><html><head><meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'nonce-${nonce}'; style-src 'unsafe-inline'; img-src data:; connect-src 'none'; base-uri 'none'; form-action 'none';"><style>
 body{font-family:var(--vscode-font-family);color:var(--vscode-foreground);background:var(--vscode-editor-background);max-width:960px;margin:20px auto;padding:0 20px;line-height:1.5}button{cursor:pointer;background:var(--vscode-button-background);color:var(--vscode-button-foreground);border:0;padding:5px 9px;margin:3px}button:disabled{opacity:.5;cursor:default}pre{overflow:auto;padding:12px;background:var(--vscode-textCodeBlock-background)}article{border-top:1px solid var(--vscode-panel-border);padding:12px 0}small{color:var(--vscode-descriptionForeground)}h1{font-size:22px}table{border-collapse:collapse}td,th{padding:5px;border:1px solid var(--vscode-panel-border)}.reference{text-decoration:underline}li{overflow-wrap:anywhere}img{max-width:100%;height:auto}.screenshot{background:transparent;padding:0;margin:0}</style></head><body>
-<button id="discuss" title="Paste this review reference into the selected agent terminal without sending">Discuss with agent</button><button id="leave-comment" title="Write feedback on this review">Leave comment</button>${pr.local?'<button id="review-feedback">Review all local feedback</button>':''}<button id="github" ${pr.local?'hidden':''}>Open in GitHub</button><h1>${pr.local?'Prepared draft · ':'#'+escape(pr.number)+' '}${escape(pr.title)}</h1>
+<button id="discuss" title="Paste this review reference into the selected agent terminal without sending">Discuss with agent</button><button id="leave-comment" title="Write feedback on this review">Leave comment</button>${pr.local?'<button id="review-feedback">Review all local feedback</button>':''}<button id="github" ${pr.local?'hidden':''}>Open in GitHub</button><h1>${isOrderedTitle(pr.title)?'':pr.local?'Prepared draft · ':'#'+escape(pr.number)+' '}${escape(pr.title)}</h1>
 <small>${escape(pr.author?.login||'')} · ${pr.isDraft?'Draft':escape(pr.state||'Open')} · ${escape(pr.headRefName||'')} → ${escape(pr.baseRefName||'')}</small>
 <section>${md(body)}</section>
 ${hasReviewSection?'':`<h2>Review material</h2><ul>${documents.map((d,i)=>d.group==='changes'?'':`<li><button data-file="${i}">${escape(d.label)}</button> <small>${d.missing?'Open in GitHub':d.image?'Screenshot':d.preview?'Preview':'Open source'}</small></li>`).join('')||'<li>No matching local files.</li>'}</ul>`}
@@ -180,7 +181,7 @@ async function openPullRequest(vscode,context,item,root,panels,{onDiscuss,commen
   const {pr,documents}=await detail(item,root,{includeImages:true});
   let panel=panels.get(key);
   if(panel){panel.dispose();panels.delete(key);}
-  panel=vscode.window.createWebviewPanel('agentGlue.pullRequest',pr.local?`Draft: ${pr.title}`:`PR #${pr.number}: ${pr.title}`,await mainEditorColumn(vscode),{enableScripts:true,localResourceRoots:[],retainContextWhenHidden:true});
+  panel=vscode.window.createWebviewPanel('agentGlue.pullRequest',isOrderedTitle(pr.title)?pr.title:pr.local?`Draft: ${pr.title}`:`PR #${pr.number}: ${pr.title}`,await mainEditorColumn(vscode),{enableScripts:true,localResourceRoots:[],retainContextWhenHidden:true});
   panels.set(key,panel);panel.onDidDispose(()=>{if(panels.get(key)===panel)panels.delete(key);});
   panel.webview.html=html(pr,documents);
   let posting=false;

@@ -77,3 +77,19 @@ test('local feedback rejects unsafe destinations and non-ignored storage',async(
  await assert.rejects(feedback.save(item,'text',{exec:async()=>({})}),/real project directories/);
  assert.deepEqual(fs.readdirSync(outside),[]);
 });
+
+test('ordered local titles override stale display labels, preserve internal IDs and filter Decisions by metadata',async()=>{
+ const root=tempDir('ordered-reviews');fs.mkdirSync(path.join(root,'.local/agent-glue'),{recursive:true});
+ const drafts=[
+  {id:'internal-engine',backlogId:'GF-STATE-99',title:'001-STATE: Engine assurance',label:'Old label',reviewKind:'decision',artifacts:[]},
+  {id:'internal-ui',backlogId:'GF-UX-10',title:'002-UX: Workbook overview',reviewKind:'implementation',artifacts:[]},
+  {id:'legacy',title:'Decision: Legacy layout',artifacts:[]},
+  {id:'explicit',title:'Decision: Obsolete prefix',reviewKind:'implementation',artifacts:[]},
+  {id:'design',title:'003-MATH: Typed kernels and safe reuse',reviewKind:'design',artifacts:[]}
+ ];
+ fs.writeFileSync(path.join(root,'.local/agent-glue/reviews.json'),JSON.stringify({version:1,drafts}));
+ const exec=async command=>({stdout:command==='gh'?'[]':`worktree ${root}\n`});
+ const rows=await local.read(root,{exec});assert.equal(rows[0].label,drafts[0].title);assert.equal(rows[0].id,'local:internal-engine');assert.equal(rows[0].backlogId,'GF-STATE-99');assert.equal(rows[0].reviewKind,'decision');
+ const result=await require('../src/resources.cjs').list('prs',root,{filter:'decisions',project:async()=>root,exec});
+ assert.deepEqual(result.items.map(row=>row.id),['local:internal-engine','local:legacy','local:design']);
+});

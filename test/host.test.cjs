@@ -1120,3 +1120,17 @@ test('first sidebar render exposes cached files while fresh terminal capture is 
  assert.equal(lastState(view).files[0].path,cached);assert.equal(lastState(view).files[0].label,'Cached plan');
  release({stdout:'docs/plan.md'});await view.send({type:'ready'});
 });
+
+test('ordered review titles stay unprefixed in editor tabs while discussion retains the real PR identity',async t=>{
+ const env=await start(t),titles=[],prompts=[];
+ const create=env.vscode.window.createWebviewPanel;
+ env.vscode.window.createWebviewPanel=(type,title,...rest)=>{titles.push(title);return create(type,title,...rest);};
+ const review=require('../packages/companion/src/pull-request.cjs'),title='001-STATE: Engine assurance';
+ const item={id:'pr-28',number:28,url:'https://github.com/example/project/pull/28'};
+ core.run=async()=>({stdout:JSON.stringify({...item,title,body:'',comments:[],files:[]})});
+ const hosted=await review.openPullRequest(env.vscode,env.context,item,env.project,new Map(),{onDiscuss:async text=>prompts.push(text)});
+ await hosted.webview.send({type:'discuss'});
+ assert.equal(titles[0],title);assert.match(prompts[0],/PR #28 001-STATE:/);
+ await review.openPullRequest(env.vscode,env.context,{id:'local:stable-internal-id',local:true,title,reviewRoot:env.project,worktree:env.project,documents:[]},env.project,new Map());
+ assert.deepEqual(titles,[title,title]);
+});

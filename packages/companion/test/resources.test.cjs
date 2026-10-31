@@ -98,3 +98,34 @@ test('PR sorting offers stable natural code order and explicit numeric/activity 
  assert.deepEqual(sortItems(items,'updated').map(i=>i.id),['a','b']);
  assert.deepEqual(items.map(i=>i.id),['b','a']);
 });
+
+test('ordered hosted titles sort by their priority code while retaining the real PR number for actions',async()=>{
+ const result=await list('prs','/selected',{filter:'all',project:async cwd=>cwd,exec:async()=>({stdout:JSON.stringify([
+  {number:1,title:'002-UX: Workbook overview',url:'https://github.com/a/b/pull/1'},
+  {number:28,title:'001-STATE: Engine assurance',url:'https://github.com/a/b/pull/28'}
+ ])})});
+ const sorted=require('../src/resources.cjs').sortItems(result.items);
+ assert.deepEqual(sorted.map(row=>row.label),['001-STATE: Engine assurance','002-UX: Workbook overview']);
+ assert.deepEqual(sorted.map(row=>row.number),[28,1]);
+});
+
+test('Priority uses ordered review codes ahead of feedback recency and keeps closed reviews last',()=>{
+ const {sortItems}=require('../src/resources.cjs');
+ const items=[
+  {id:'b',label:'002-UX: Workbook overview',number:1,state:'OPEN',newComments:true,updatedAt:'2026'},
+  {id:'a',label:'001-STATE: Engine assurance',number:28,state:'OPEN',updatedAt:'2020'},
+  {id:'c',label:'000-OLD: Finished review',number:3,state:'MERGED',newComments:true},
+  {id:'legacy',label:'#8 · Legacy review',number:8,state:'OPEN',reviewRequested:true}
+ ];
+ assert.deepEqual(sortItems(items,'priority').map(row=>row.id),['a','b','legacy','c']);
+ assert.deepEqual(sortItems(items,'number').map(row=>row.number),[28,8,3,1],'explicit GitHub number sort remains available');
+});
+
+test('Decisions combines hosted decision labels and legacy title matches without duplicating PRs',async()=>{
+ const calls=[],legacy={number:2,title:'Decision: Legacy choice',url:'https://github.com/a/b/pull/2'},labelled={number:9,title:'001-STATE: Engine assurance',url:'https://github.com/a/b/pull/9',labels:[{name:'decision'}]};
+ const result=await list('prs','/selected',{filter:'decisions',project:async cwd=>cwd,exec:async(command,args)=>{
+  calls.push(args);return {stdout:JSON.stringify(args.at(-1).startsWith('label:')?[labelled,legacy,{number:10,title:'Implementation',url:'https://github.com/a/b/pull/10',labels:[{name:'implementation'}]}]:[legacy])};
+ }});
+ assert.equal(calls.length,2);assert.ok(calls.every(args=>args[args.indexOf('--json')+1].includes('labels')));
+ assert.deepEqual(result.items.map(row=>row.number),[2,9]);assert.equal(result.items[1].label,labelled.title);
+});

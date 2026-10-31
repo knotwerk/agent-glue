@@ -55,6 +55,17 @@ view and Decisions filter. Missing or blank labels fall back to `title`. Optiona
 `head` commit IDs provide the committed Changes tree. Documentation packets
 without committed comparisons may declare proposed files as changes.
 
+Titles in the optional `NNN-TOPIC: Short title` format, such as
+`001-STATE: Engine assurance`, display as written in the list, heading and editor
+tab. They override older display labels; no GitHub number or backlog code is
+prepended. Code/title sorting and Priority put these reviews in numeric-code
+order, with closed reviews after active ones in Priority. Unnumbered reviews
+keep their existing behavior. Internal IDs and GitHub numbers remain unchanged.
+For local packets, `reviewKind: "design"` or `reviewKind: "decision"` includes the
+packet in Decisions without needing a title prefix. When `reviewKind` is absent,
+the legacy `Decision:` prefix still works. Hosted PRs can use the `decision`
+GitHub label; Decisions combines labelled PRs with legacy title matches.
+
 Artifacts have `path`, optional `label`, `href`, `anchor`, and `root` (this
 repository or one of its registered worktrees). `group` is `review` by default
 or `changes` for proposed scoped files. Include the body in the artifacts.

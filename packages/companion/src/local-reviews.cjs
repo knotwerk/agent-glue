@@ -3,7 +3,7 @@ const fs=require('node:fs/promises');
 const path=require('node:path');
 const core=require('./core.cjs');
 const reviewFiles=require('./review-files.cjs');
-const {reviewLabel}=require('./review-label.cjs');
+const {reviewLabel,isOrderedTitle}=require('./review-label.cjs');
 const feedback=require('./local-feedback.cjs');
 async function read(root,{exec=core.run}={}){
   try{root=await fs.realpath(root);}catch(error){if(error.code==='ENOENT')return [];throw error;}
@@ -39,7 +39,7 @@ async function read(root,{exec=core.run}={}){
     const body=documents.find(d=>d.path===path.resolve(root,draft.bodyFile||''))||documents.find(d=>d.path===path.resolve(worktree,draft.bodyFile||''));
     const reviewComments=comments.filter(comment=>comment.reviewId==='local:'+draft.id);
     const commentAt=reviewComments.map(comment=>comment.createdAt).sort().at(-1)||'';
-    drafts.push({commentAt,reviewRoot:root,feedbackPath:feedback.file(root),id:'local:'+draft.id,label:reviewLabel(typeof draft.label==='string'&&draft.label.trim()?draft.label.trim():draft.title,draft.backlogId),title:draft.title,local:true,state:'OPEN',number:0,description:'Prepared draft · not published'+(reviewComments.length?' · '+reviewComments.length+' local comments':''),branch:draft.branch||'',head:reviewFiles.sha(draft.head)?draft.head:'',base:reviewFiles.sha(draft.base)?draft.base:'',baseRefName:draft.baseRefName||'main',worktree,publishedUrl:typeof draft.publishedUrl==='string'?draft.publishedUrl:'',backlogId:draft.backlogId||draft.id,bodyFile:body?.path,documents,updatedAt:draft.updatedAt||''});
+    drafts.push({commentAt,reviewRoot:root,feedbackPath:feedback.file(root),id:'local:'+draft.id,label:reviewLabel(isOrderedTitle(draft.title)?draft.title:typeof draft.label==='string'&&draft.label.trim()?draft.label.trim():draft.title,draft.backlogId),title:draft.title,...(typeof draft.reviewKind==='string'&&draft.reviewKind.trim()?{reviewKind:draft.reviewKind}:{}),local:true,state:'OPEN',number:0,description:'Prepared draft · not published'+(reviewComments.length?' · '+reviewComments.length+' local comments':''),branch:draft.branch||'',head:reviewFiles.sha(draft.head)?draft.head:'',base:reviewFiles.sha(draft.base)?draft.base:'',baseRefName:draft.baseRefName||'main',worktree,publishedUrl:typeof draft.publishedUrl==='string'?draft.publishedUrl:'',backlogId:draft.backlogId||draft.id,bodyFile:body?.path,documents,updatedAt:draft.updatedAt||''});
   }
   return drafts;
 }
