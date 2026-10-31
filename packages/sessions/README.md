@@ -73,6 +73,11 @@ terminal's temporary title. Distinct sessions may legitimately share a title.
 When a normal shell launches a Claude/Codex tmux session, Companion’s **Terminals**
 selector adopts its verified session name and status dot. Generic process titles
 such as `tmux` are replaced in the selector; custom tab names are preserved.
+The selector confirms a connected agent’s tmux rename before changing its label.
+Names assigned to an ordinary shell before launch are retained until that exact
+shell connects. Unidentified tmux tabs ask you to retry instead of reporting a
+local-only rename as saved. Session, client and process discovery run concurrently
+when process IDs are ready; unresolved IDs never block the shared queue.
 
 Sessions never closes or recreates a terminal just to update its title. A tab
 with a fixed startup label may keep that label after a tmux-side rename; use

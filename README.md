@@ -89,7 +89,9 @@ on macOS, dictation and clipboard images.
   services; completed or stopped jobs do not count. Hover shows the full terminal
   folder path. Routine heartbeat refreshes preserve the hover; timers show minutes.
   New shell tabs that launch Claude/Codex in tmux gain their verified session name
-  and status dot automatically; custom tab names are preserved.
+  and status dot automatically; custom tab names are preserved. Renaming an agent
+  saves its tmux name before changing the label. Dragged order follows stable session
+  identity through renames and reloads.
   Recent child-agent tool activity also shows amber without replacing the parent's status.
   Open the terminal for two seconds to clear it, or right-click **Mark Unread** to
   bring it back. Read marks survive reloads. Right-click also offers **Rename

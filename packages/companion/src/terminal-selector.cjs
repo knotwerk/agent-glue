@@ -1,11 +1,11 @@
 'use strict';
 const path=require('node:path');
 // Native terminal controls; lifecycle status is deliberately not inferred here.
-function registerSelector(vscode,context,sessionForTerminal=()=>undefined,statusForSession=()=>({status:'unknown',label:'No lifecycle events yet'}),cwdForTerminal=terminal=>terminal.shellIntegration?.cwd||terminal.creationOptions?.cwd,titleForTerminal=terminal=>terminal.name){
+function registerSelector(vscode,context,sessionForTerminal=()=>undefined,statusForSession=()=>({status:'unknown',label:'No lifecycle events yet'}),cwdForTerminal=terminal=>terminal.shellIntegration?.cwd||terminal.creationOptions?.cwd,titleForTerminal=terminal=>terminal.name,actions={}){
  if(!vscode.window.createTreeView)return;
  let providerReady=false;
  void Promise.resolve(vscode.commands.executeCommand('setContext','agentGlue.terminalsReady',false)).catch(()=>{});
- const changed=new vscode.EventEmitter(),ids=new WeakMap();let nextId=0;
+ const changed=new vscode.EventEmitter(),ids=new WeakMap(),orderKeys=new WeakMap();let nextId=0;
  const mime='application/vnd.code.tree.agentglue.terminalselector';
  let saved=context.workspaceState?.get('terminalSelector.order',[])||[],ordered=[],dragged=[],restoredSessions=false;
  let savedGroups=context.workspaceState?.get('terminalSelector.groups',[])||[];
@@ -15,6 +15,7 @@ function registerSelector(vscode,context,sessionForTerminal=()=>undefined,status
  const isOpen=terminal=>listed().includes(terminal);
  const locationKey=location=>location===2||(location&&typeof location==='object'&&'viewColumn' in location)?'editor':'panel';
  const identity=terminal=>{
+  const stable=actions.identityForTerminal?.(terminal);if(stable&&sessionForTerminal(terminal))return 'tmux-id:'+stable;
   const session=sessionForTerminal(terminal);if(session)return 'tmux:'+session;
   const options=terminal.creationOptions||{};
   const base=JSON.stringify([terminal.name,String(options.cwd||''),options.shellPath||'',locationKey(options.location)]);
@@ -22,10 +23,26 @@ function registerSelector(vscode,context,sessionForTerminal=()=>undefined,status
   return 'terminal:'+base+':'+peers.indexOf(terminal);
  };
  const flatChildren=()=>{
-  const terminals=listed();
+  const terminals=listed();let keysChanged=false;
+  for(const terminal of terminals){
+   const key=identity(terminal),previous=orderKeys.get(terminal),legacy='tmux:'+sessionForTerminal(terminal);
+   if(previous!==key){
+    keysChanged=true;orderKeys.set(terminal,key);
+    const replace=value=>value===previous||value===legacy?key:value;
+    saved=[...new Set(saved.map(replace))];savedGroups=savedGroups.map(pair=>pair.map(replace));
+    if(detachedIds.delete(previous)||detachedIds.delete(legacy))detachedIds.add(key);
+    if(!saved.includes(key))saved.push(key);
+    if(saved.length>1000)saved=saved.slice(-1000);
+   }
+  }
+  if(keysChanged){
+   void context.workspaceState?.update('terminalSelector.order',saved.slice());
+   void context.workspaceState?.update('terminalSelector.groups',savedGroups);
+   void context.workspaceState?.update('terminalSelector.detached',[...detachedIds]);
+  }
   const restoreSessions=!restoredSessions&&terminals.some(t=>sessionForTerminal(t));
   if(restoreSessions)restoredSessions=true;
-  if(!ordered.length||restoreSessions)ordered=terminals.slice().sort((a,b)=>{const ai=saved.indexOf(identity(a)),bi=saved.indexOf(identity(b));return (ai<0?Infinity:ai)-(bi<0?Infinity:bi);});
+  if(!ordered.length||restoreSessions||keysChanged)ordered=terminals.slice().sort((a,b)=>{const ai=saved.indexOf(identity(a)),bi=saved.indexOf(identity(b));return (ai<0?Infinity:ai)-(bi<0?Infinity:bi);});
   else ordered=ordered.filter(isOpen).concat(terminals.filter(t=>!ordered.includes(t)));
   return ordered;
  };
@@ -171,7 +188,14 @@ function registerSelector(vscode,context,sessionForTerminal=()=>undefined,status
    const name=await vscode.window.showInputBox({title:'Rename Terminal',value:titleForTerminal(terminal)||terminal.name,prompt:'Choose a name for this terminal',validateInput:value=>value.trim()?undefined:'Enter a terminal name.'});
    if(name===undefined||!name.trim())return;
    if(!await selectTerminal(terminal))return;
-   await vscode.commands.executeCommand('workbench.action.terminal.renameWithArg',{name:name.trim()});refresh();
+   try{
+    await actions.renameTerminal?.(terminal,name.trim());
+    // Persistence can take time; focus may have moved while it was in flight.
+    if(!isOpen(terminal))return;
+    if(vscode.window.activeTerminal!==terminal&&!await selectTerminal(terminal))return;
+    await vscode.commands.executeCommand('workbench.action.terminal.renameWithArg',{name:name.trim()});refresh();
+   }catch(error){await vscode.window.showErrorMessage('Unable to rename terminal: '+error.message);}
+
   }),
   vscode.commands.registerCommand('agentGlue.moveSelectorTerminal',moveToOwnTerminal),
   vscode.commands.registerCommand('agentGlue.splitSelectorTerminal',async terminal=>{

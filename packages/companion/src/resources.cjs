@@ -1,13 +1,12 @@
 'use strict';
 const core=require('./core.cjs');
 const {reviewLabel}=require('./review-label.cjs');
-const localReviews=require('./local-reviews.cjs');
 const filters={decisions:'Decision in:title sort:updated-desc',priority:'sort:updated-desc',all:'sort:updated-desc',open:'sort:updated-desc',merged:'sort:updated-desc',closed:'sort:updated-desc',drafts:'is:draft sort:updated-desc',review:'review-requested:@me sort:updated-desc',mine:'author:@me review:required sort:updated-desc',comments:'sort:updated-desc comments:>0'};
 async function list(kind,cwd,{exec=core.run,project=core.project,filter='priority',session}={}){
   if(kind==='tasks')return require('./tasks.cjs').read(await project(cwd),{session});
   if(kind!=='prs')return {root:await project(cwd),items:[]};
   const root=await project(cwd);
-  const prepared=await localReviews.read(root,{exec});
+  const prepared=await require('./local-reviews.cjs').read(root,{exec});
   const local=filter==='decisions'?prepared.filter(d=>/^Decision:/i.test(d.title)):prepared;
   if(kind==='prs'){
     const query=async selected=>{

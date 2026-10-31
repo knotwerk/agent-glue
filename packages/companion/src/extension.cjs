@@ -9,9 +9,11 @@ const {WebApps,appLabel,appStatus,appDetails,hiddenEndpoint}=require('./web-apps
 const resources=require('./resources.cjs');
 const {TerminalActivity,terminalUri}=require('./terminal-activity.cjs');
 const {BrowserLinks}=require('./browser-links.cjs');
-const {openPullRequest,detail:reviewDetail,openReviewDocument}=require('./pull-request.cjs');
+const openPullRequest=(...args)=>require('./pull-request.cjs').openPullRequest(...args);
+const reviewDetail=(...args)=>require('./pull-request.cjs').detail(...args);
+const openReviewDocument=(...args)=>require('./pull-request.cjs').openReviewDocument(...args);
 const {renderSidebar,renderDraft}=require('./views.cjs');
-const {openPreview}=require('./preview.cjs');
+const openPreview=(...args)=>require('./preview.cjs').openPreview(...args);
 function activate(context){
   if(!vscode.workspace.isTrusted)return;
   const activatedAt=Date.now();let firstRefresh=true,firstView=true;
@@ -38,7 +40,14 @@ function activate(context){
     const link=await sessionsApi(),name=link?.sessionForTerminal(terminal);
     const cwd=name?(await core.sessions()).find(session=>session.sessionName===name)?.cwd:undefined;
     return cwd||terminal.shellIntegration?.cwd||terminal.creationOptions?.cwd;
-  },terminal=>api?.titleForTerminal?.(terminal)||terminal.name):undefined;
+  },terminal=>api?.titleForTerminal?.(terminal)||terminal.name,{
+    identityForTerminal:terminal=>api?.identityForTerminal?.(terminal),
+    renameTerminal:async(terminal,title)=>{
+      const link=await sessionsApi();
+      if(link&&!link.renameTerminal)throw new Error('Update Agent Glue Sessions before renaming an agent terminal.');
+      await link?.renameTerminal(terminal,title);
+    }
+  }):undefined;
   let resourceTab='files',prFilter=context.workspaceState.get('prFilter','all'),resourceItems=[],resourceStatus='',resourceKey='',resourceRoot,resourceGeneration=0,resourceLoadedAt=0;
   let prSort=context.workspaceState.get('prSort','title'),prReadFilter=context.workspaceState.get('prReadFilter','all');
   const prRead=context.workspaceState.get('prRead',{});

@@ -16,15 +16,18 @@ fs.writeFileSync(path.join(ext,'package.json'),JSON.stringify({name:'agent-glue-
 fs.mkdirSync(path.join(ext,'media'));for(const name of fs.readdirSync(path.join(root,'packages/companion/media')).filter(n=>n.endsWith('.svg')))fs.copyFileSync(path.join(root,'packages/companion/media',name),path.join(ext,'media',name));
 fs.writeFileSync(path.join(ext,'extension.cjs'),`const vscode=require('vscode'),fs=require('fs');
 exports.activate=async context=>{
+ fs.appendFileSync(${JSON.stringify(path.join(dir,'activations'))},'activated\\n');
  void vscode.commands.executeCommand('agentGlue.terminalSelector.focus');
  await new Promise(resolve=>{const poll=setInterval(()=>{if(fs.existsSync(${JSON.stringify(path.join(dir,'register-provider'))})){clearInterval(poll);resolve();}},50);});
  const {registerSelector}=require(${JSON.stringify(path.join(root,'packages/companion/src/terminal-selector.cjs'))});
  const {summarize}=require(${JSON.stringify(path.join(root,'packages/companion/src/lifecycle.cjs'))});
  const {eventRecord}=require(${JSON.stringify(path.join(root,'packages/companion/src/lifecycle-hook.cjs'))});
  const identity={server:'1',pane:'%1',created:'1'},session={serverPid:'1',pane:'%1',created:'1'};
- let selector,connected=false,control=[eventRecord({hook_event_name:'UserPromptSubmit',session_id:'ui'},identity,Date.now())];
+ const titleFile=${JSON.stringify(path.join(dir,'saved-title'))};
+ let sessionTitle=fs.existsSync(titleFile)?fs.readFileSync(titleFile,'utf8'):'UI Beta';
+ let selector,connected=fs.existsSync(${JSON.stringify(path.join(dir,'session-connected'))}),control=[eventRecord({hook_event_name:'UserPromptSubmit',session_id:'ui'},identity,Date.now())];
  function terminal(name){const write=new vscode.EventEmitter();return vscode.window.createTerminal({name,pty:{onDidWrite:write.event,open(){write.fire('Synthetic terminal for UI testing. No shell or tmux.\\r\\n');},close(){}}});}
- const a=terminal('UI Alpha'),b=terminal('tmux');a.show(false);selector=registerSelector(vscode,context,t=>t===b&&connected?'fixture-agent':undefined,()=>summarize(control,session),async()=>'/remote/projects/example',t=>t===b&&connected&&t.name==='tmux'?'UI Beta':t.name);
+ const a=terminal('UI Alpha'),b=terminal(connected?sessionTitle:'tmux');a.show(false);selector=registerSelector(vscode,context,t=>t===b&&connected?'fixture-agent':undefined,()=>summarize(control,session),async()=>'/remote/projects/example',t=>t===b&&connected&&t.name==='tmux'?sessionTitle:t.name,{identityForTerminal:t=>t===b&&connected?'1:$7:1':undefined,renameTerminal:async(t,title)=>{if(t===b){sessionTitle=title;fs.writeFileSync(titleFile,title);}}});
  const timer=setInterval(()=>{connected=fs.existsSync(${JSON.stringify(path.join(dir,'session-connected'))});try{control=JSON.parse(fs.readFileSync(${JSON.stringify(path.join(dir,'control.json'))},'utf8')).map(e=>eventRecord(e,identity,e.at));}catch{}selector.refresh();fs.writeFileSync(${JSON.stringify(path.join(dir,'state.json'))},JSON.stringify({names:vscode.window.terminals.map(t=>t.name),active:vscode.window.activeTerminal?.name}));},150);context.subscriptions.push({dispose(){clearInterval(timer);}});
  await vscode.commands.executeCommand('agentGlue.tryTerminalSelector');
 };`);
@@ -84,7 +87,15 @@ let output='',startupError;server.on('error',error=>{startupError=error;});serve
   await color('green-new');await renamed.click();await page.waitForTimeout(2200);await page.keyboard.press('F1');const commands=page.locator('.quick-input-widget input');await commands.fill('>Agent Glue: Try Terminal Selector Beside Terminals');await page.waitForTimeout(300);await commands.press('Enter');await color('green');
   await renamed.click({button:'right'});const unread=page.getByRole('menuitem',{name:'Mark Unread',exact:true});await unread.click();if(await unread.isVisible())await unread.press('Enter');await color('green-new');
   await page.screenshot({path:path.join(dir,'unread.png')});
-  console.log(JSON.stringify({passed:true,checks:['shell becomes named agent row with status dot','loading without provider warning','rename exact terminal','hook events to amber/red/green','running service amber, stopped service green','folder hover survives heartbeat refreshes','selected colour preserved','finished ring','read delay','mark unread'],dir,state}));
+  assert.equal(fs.readFileSync(path.join(dir,'saved-title'),'utf8'),'UI Renamed');
+  const activationCount=()=>fs.readFileSync(path.join(dir,'activations'),'utf8').length,beforeReload=activationCount();
+  await page.keyboard.press('F1');await page.locator('.quick-input-widget input').fill('>Developer: Reload Window');await page.waitForTimeout(300);await page.locator('.quick-input-widget input').press('Enter');
+  const reloadStarted=Date.now();while(activationCount()===beforeReload){if(Date.now()-reloadStarted>45000)throw Error('Extension host did not reactivate after reload');await new Promise(resolve=>setTimeout(resolve,100));}
+  const restored=page.getByRole('treeitem').filter({hasText:'UI Renamed'});await restored.first().waitFor({timeout:45000});
+  assert.equal(await restored.count(),1);assert.equal(await page.getByRole('treeitem').filter({hasText:'UI Beta'}).count(),0);
+  await color('green-new');
+
+  console.log(JSON.stringify({passed:true,checks:['shell becomes named agent row with status dot','confirmed rename and dot survive reload without duplicate','loading without provider warning','rename exact terminal','hook events to amber/red/green','running service amber, stopped service green','folder hover survives heartbeat refreshes','selected colour preserved','finished ring','read delay','mark unread'],dir,state}));
  }catch(e){console.error(e.stack);console.error('UI artifacts: '+dir);if(browser){const p=browser.contexts()[0]?.pages()[0];if(p){await p.screenshot({path:path.join(dir,'failure.png')});fs.writeFileSync(path.join(dir,'failure.txt'),await p.locator('body').innerText());}}process.exitCode=1;
  }finally{try{await browser?.close();}finally{server.kill('SIGTERM');}}
 })();

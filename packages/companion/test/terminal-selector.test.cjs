@@ -206,3 +206,12 @@ test('heartbeat and selection changes do not redraw rows; a colour change target
  h.vscode.window.activeTerminal=h.b;list.refresh();assert.deepEqual(h.changesFor,[],'selection is handled by reveal, not rebuilding both rows');
  state='blocked';list.refresh();assert.deepEqual(h.changesFor,[h.a],'only the changed status row needs repainting');
 });
+
+test('selector waits for session rename confirmation and leaves the native label alone on failure',async()=>{
+ const h=host();let resolveRename;const errors=[];h.vscode.window.showErrorMessage=async message=>errors.push(message);
+ registerSelector(h.vscode,h.context,()=> 'claude-one',undefined,undefined,undefined,{renameTerminal:()=>new Promise(resolve=>{resolveRename=resolve;})});
+ const work=h.commands.get('agentGlue.renameSelectorTerminal')(h.a);await new Promise(resolve=>setImmediate(resolve));assert.deepEqual(h.calls,[]);
+ resolveRename();await work;assert.equal(h.calls[0][0],'workbench.action.terminal.renameWithArg');h.calls.length=0;
+ registerSelector(h.vscode,h.context,()=> 'claude-one',undefined,undefined,undefined,{renameTerminal:async()=>{throw Error('Session unavailable');}});
+ await h.commands.get('agentGlue.renameSelectorTerminal')(h.a);assert.deepEqual(h.calls,[]);assert.match(errors[0],/Session unavailable/);
+});

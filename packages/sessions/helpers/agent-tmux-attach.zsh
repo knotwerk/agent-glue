@@ -134,7 +134,11 @@ elif [[ -z "$title" || "$title" == "$session" ]]; then
 fi
 
 printf '\033]0;%s\a' "$title"
-label_tmux_session "$session" "$title"
+# Named sessions already carry their labels and options from creation/rename.
+# Reconnecting must not replay per-window/per-pane mutations for every tab.
+if [[ -z "$current_title" ]]; then
+  label_tmux_session "$session" "$title"
+fi
 
 if running_in_current_tmux_pane; then
   tmux switch-client -t "=$session"

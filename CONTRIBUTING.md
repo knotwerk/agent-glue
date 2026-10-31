@@ -52,13 +52,15 @@ colour cannot hide a broken event pipeline.
 `npm run test:ui` tests the real selector in an isolated VS Code web workbench:
 delayed provider registration without the default warning, a shell adopting an
 agent session name and dot, rename the clicked
-terminal, hook events through the real status reducer to amber/red/green dots,
+terminal and retain its name and dot after reload, hook events through the real status reducer to amber/red/green dots,
 running/stopped background services, folder hovers surviving heartbeat refreshes,
 selected colours, the unread ring, delayed
 mark-as-read and Mark Unread. Its terminals are synthetic pseudoterminals; it
 starts no shell or agent and does not connect to tmux. It uses a separate home,
 profile and extension folder under ignored `_script_outputs/`, and closes only
-its own browser and server afterward. Existing sessions are untouched.
+its own browser and server afterward. Existing sessions are untouched. A cross-extension fake-host test also covers
+create → launch → rename → reorder → reload for Claude and Codex, including
+restoration when VS Code loses the original shell.
 
 Extract an official VS Code **web server** build matching the desktop version
 under `_script_outputs/vscode-ui-runtime`, or set `AGENT_GLUE_VSCODE_RUNTIME`

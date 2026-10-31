@@ -6,7 +6,8 @@ const crypto=require('node:crypto');
 const path=require('node:path');
 const fs=require('node:fs/promises');
 const core=require('./core.cjs');
-const {documentHtml,escape}=require('./preview.cjs');
+const documentHtml=(...args)=>require('./preview.cjs').documentHtml(...args);
+const escape=(...args)=>require('./preview.cjs').escape(...args);
 function zeroTierAddress(interfaces=os.networkInterfaces()){
   for(const [name,addresses] of Object.entries(interfaces))if(/^zt/i.test(name)){
     const address=(addresses||[]).find(a=>!a.internal&&(a.family==='IPv4'||a.family===4));

@@ -45,6 +45,7 @@ const RENAME_SCRIPT = path.join(__dirname, 'helpers', 'agent-tmux-rename.zsh');
 const terminalSessions = new Map();
 const terminalSessionIdentities = new Map();
 const terminalNames = new Map();
+const pendingRenames = new Map();
 const terminalPids = new WeakMap();
 let sessionTerminals = new Map();
 let taskOutput;
@@ -319,12 +320,11 @@ function terminalSessionFromPid(terminal, pid, clientSessionsByPid, liveSessionN
     const identity = terminalSessionIdentities.get(terminal);
     if (identity) return liveByIdentity.get(identity)?.session;
 
-    // Launch metadata is only a shortcut while VS Code has not supplied a PID.
-    // Once it does, the live client/process relationship takes precedence.
-    if (pid === undefined) {
-        const saved = attachmentIdentity(terminal);
-        if (saved && liveByIdentity.has(saved)) return liveByIdentity.get(saved).session;
-    }
+    // A restored helper may already have a PID but not yet be a tmux client.
+    // Its validated launch token still identifies the exact attachment. Any
+    // live client relationship above takes precedence over this shortcut.
+    const saved = attachmentIdentity(terminal);
+    if (saved && liveByIdentity.has(saved)) return liveByIdentity.get(saved).session;
 
     const tracked = terminalSessions.get(terminal);
     if (tracked && liveSessionNames.has(tracked)) {
@@ -339,18 +339,26 @@ async function refreshTerminalMappings() {
     firstDiscovery = false;
     const terminals = [...vscode.window.terminals];
     terminals.forEach(observeTerminalPid);
-    const sessions = await getAgentSessions();
+    const sessionsWork = getAgentSessions();
+    // PID promises already resolved by VS Code get one microtask, never a wait.
+    await Promise.resolve();
+    let snapshotRecords = new Map(terminals.map(terminal => [terminal, terminalPids.get(terminal)]));
+    let snapshotPids = new Map(terminals.map(terminal => [terminal, snapshotRecords.get(terminal).pid]));
+    let clientsWork = [...snapshotPids.values()].some(pid => pid !== undefined)
+        ? getTmuxClientSessionsByPid() : undefined;
+    const sessions = await sessionsWork;
     if (report) startupLog('session query', `ok=${Boolean(sessions)} tabs=${terminals.length}`);
     if (!sessions) return { complete: false, terminals };
     const liveBySession = new Map(sessions.map(item => [item.session, item]));
     const liveSessionNames = new Set(liveBySession.keys());
     const liveByIdentity = new Map(sessions.filter(item => item.identity).map(item => [item.identity, item]));
-    const snapshotRecords = new Map(terminals.map(terminal => [terminal, terminalPids.get(terminal)]));
-    const snapshotPids = new Map(terminals.map(terminal => [terminal, snapshotRecords.get(terminal).pid]));
-    // Without any ready PIDs there is nothing to join against the process
-    // table. Validate saved identities now; resolution triggers a fresh pass.
-    const clientSessionsByPid = [...snapshotPids.values()].some(pid => pid !== undefined)
-        ? await getTmuxClientSessionsByPid() : new Map();
+    if (!clientsWork) {
+        snapshotRecords = new Map(terminals.map(terminal => [terminal, terminalPids.get(terminal)]));
+        snapshotPids = new Map(terminals.map(terminal => [terminal, snapshotRecords.get(terminal).pid]));
+        clientsWork = [...snapshotPids.values()].some(pid => pid !== undefined)
+            ? getTmuxClientSessionsByPid() : Promise.resolve(new Map());
+    }
+    const clientSessionsByPid = await clientsWork;
     if (report) startupLog('client query', `ok=${Boolean(clientSessionsByPid)}`);
     if (!clientSessionsByPid) return { complete: false, terminals };
     // A relaunch can happen while metadata queries are in flight. An older
@@ -392,6 +400,7 @@ async function refreshTerminalMappings() {
     for (const terminal of [...terminalNames.keys()]) {
         if (!currentTerminals.has(terminal)) {
             terminalNames.delete(terminal);
+            pendingRenames.delete(terminal);
         }
     }
 
@@ -470,53 +479,72 @@ function moveSessionMapping(oldSession, newSession, title) {
 async function persistTerminalRename(sourceTerminal) {
     const terminal = sourceTerminal || vscode.window.activeTerminal;
     if (!terminal || !vscode.window.terminals.includes(terminal)) return;
-    if (terminalNames.get(terminal) === normalizeName(terminal.name)) return;
-    const { complete, liveBySession } = await refreshTerminalMappings();
-    if (!complete || !vscode.window.terminals.includes(terminal)) return;
-
     const current = normalizeName(terminal.name);
-    const observed = terminalNames.get(terminal);
-    if (observed === undefined) {
+    if (terminalNames.get(terminal) !== current) {
+        // Keep the intent until a live client proves which session to rename.
+        // A label change alone must never assign session identity.
+        if (isPersistableTitle(terminal.name)) pendingRenames.set(terminal, current);
         terminalNames.set(terminal, current);
-        return;
     }
-    if (current === observed) return;
+    if (!pendingRenames.has(terminal)) return;
+    const snapshot = await refreshTerminalMappings();
+    if (snapshot.complete) await applyPendingRename(terminal, snapshot.liveBySession);
+}
 
-    terminalNames.set(terminal, current);
-
-    const session = terminalSessions.get(terminal);
-    if (!session) return;
-
-    const live = liveBySession.get(session);
-    if (!live) return;
-
+async function applyPendingRename(terminal, liveBySession, explicit = false) {
+    const current = pendingRenames.get(terminal);
+    const session = terminalSessions.get(terminal), live = liveBySession.get(session);
+    if (!current || !live || !vscode.window.terminals.includes(terminal)) return false;
     const liveTitle = authoritativeTitle(live);
-    const userNamed = normalizeName(live.userNamed);
-    const previousTitle = lastKnownNames.get(session) || liveTitle;
-    if (!isPersistableTitle(terminal.name) || current === liveTitle || current === previousTitle) {
-        return;
+    if (current === liveTitle || (!explicit && isGeneratedName(current)
+        && (live.userNamed || !isGeneratedName(liveTitle)))) {
+        pendingRenames.delete(terminal);
+        return false;
     }
-    if (userNamed && isGeneratedName(current)) {
-        terminalNames.set(terminal, current);
-        return;
-    }
-    if (isGeneratedName(current) && !isGeneratedName(liveTitle)) {
-        terminalNames.set(terminal, current);
-        return;
-    }
-
     const renamedSession = await renameSession(session, current);
     if (!renamedSession) {
-        terminalNames.set(terminal, liveTitle);
-        return;
+        if (explicit) throw new Error('The tmux session could not be renamed. The terminal label has not been changed.');
+        return false;
     }
-
     moveSessionMapping(session, renamedSession, current);
+    pendingRenames.delete(terminal);
+    return true;
+}
+
+function renameTerminal(terminal, title) {
+    // Unlike timer observations, this is a user action: propagate failure to
+    // the selector so it cannot display a successful local-only rename.
+    const work = operationQueue.catch(() => {}).then(async () => {
+        if (!vscode.window.terminals.includes(terminal)) throw new Error('This terminal is no longer open.');
+        const clean = normalizeName(title);
+        if (!isPersistableTitle(clean)) throw new Error('Choose a descriptive name, rather than a shell or CLI name.');
+        const snapshot = await refreshTerminalMappings();
+        if (!snapshot.complete) throw new Error('Session discovery is unavailable. Try the rename again.');
+        if (!terminalSessions.has(terminal) && (normalizeName(terminal.name) === 'tmux'
+            || AGENT_PROGRAMS.includes(normalizeName(terminal.name)))) {
+            throw new Error('This agent terminal is still being identified. Refresh and retry the rename.');
+        }
+        pendingRenames.set(terminal, clean);
+        try { await applyPendingRename(terminal, snapshot.liveBySession, true); }
+        catch (error) { pendingRenames.delete(terminal); throw error; }
+        // An ordinary shell may be named before its launcher connects. The
+        // pending name is applied once its client is discovered, even inactive.
+        terminalNames.set(terminal, clean);
+    });
+    operationQueue = work.catch(() => {});
+    return work;
 }
 
 async function attachSessions({ quiet = false, force = false } = {}) {
-    const { complete, unresolved, sessions, terminals } = await refreshTerminalMappings();
+    const { complete, unresolved, sessions, terminals, liveBySession } = await refreshTerminalMappings();
     if (!complete) return;
+    let renamed = false;
+    for (const terminal of pendingRenames.keys()) {
+        if (await applyPendingRename(terminal, liveBySession)) renamed = true;
+    }
+    // Session names in this snapshot predate the rename; rediscover before
+    // considering attachment candidates, keeping the original tab in place.
+    if (renamed) return;
     // Known terminals remain mapped and usable. An unknown pending native tab
     // could be a launcher for any unmatched session; never create a duplicate
     // merely because its PID has not arrived (including an explicit refresh).
@@ -580,6 +608,7 @@ function forgetTerminal(terminal) {
     const session = terminalSessions.get(terminal);
     terminalSessions.delete(terminal);
     terminalNames.delete(terminal);
+    pendingRenames.delete(terminal);
     if (sessionTerminals.has(session)) {
         sessionTerminals.get(session).delete(terminal);
     }
@@ -646,7 +675,7 @@ function activate(context) {
         void schedule('attachPoll', () => attachSessions({ quiet: true }));
     }, ATTACH_POLL_INTERVAL_MS);
     context.subscriptions.push({ dispose: () => clearInterval(attachPoll) });
-    return { handoffProfiles: [...AGENT_PROGRAMS], forkSession: (source,destination,options) => {
+    return { renameTerminal, identityForTerminal: terminal => terminalSessionIdentities.get(terminal), handoffProfiles: [...AGENT_PROGRAMS], forkSession: (source,destination,options) => {
         const result=operationQueue.catch(()=>{}).then(()=>require('./fork.cjs').forkSession(source,destination,{exec:execFileAsync,createTerminal:options=>vscode.window.createTerminal(options),register:(session,terminal)=>{terminalSessions.set(terminal,session);addSessionTerminal(session,terminal);},handoffDirectory:path.join(context.globalStorageUri.fsPath,'handoffs')},options));
         operationQueue=result.catch(error=>warn('fork',error));return result;
     }, terminalForSession: session => [...(sessionTerminals.get(session) || [])].find(t => vscode.window.terminals.includes(t)), sessionForTerminal: terminal => terminalSessions.get(terminal),
