@@ -9,6 +9,7 @@ function registerSelector(vscode,context,sessionForTerminal=()=>undefined,status
  const mime='application/vnd.code.tree.agentglue.terminalselector';
  let saved=context.workspaceState?.get('terminalSelector.order',[])||[],ordered=[],dragged=[],restoredSessions=false;
  let savedGroups=context.workspaceState?.get('terminalSelector.groups',[])||[];
+ const terminating=new Set();
  const parents=new Map(),detached=new WeakSet(),pending=new WeakSet();
  const detachedIds=new Set(context.workspaceState?.get('terminalSelector.detached',[])||[]);
  const listed=()=>vscode.window.terminals.filter(t=>!t.creationOptions?.hideFromUser);
@@ -196,6 +197,25 @@ function registerSelector(vscode,context,sessionForTerminal=()=>undefined,status
     await vscode.commands.executeCommand('workbench.action.terminal.renameWithArg',{name:name.trim()});refresh();
    }catch(error){await vscode.window.showErrorMessage('Unable to rename terminal: '+error.message);}
 
+  }),
+  vscode.commands.registerCommand('agentGlue.terminateSelectorTerminal',async terminal=>{
+   if(!isOpen(terminal)||terminating.has(terminal))return;
+   terminating.add(terminal);
+   try{
+    if(await actions.terminateTerminal?.(terminal)){refresh();return;}
+    if(!isOpen(terminal))return;
+    const session=sessionForTerminal(terminal),name=titleForTerminal(terminal)||terminal.name;
+    if(session)throw new Error('Update Agent Glue Sessions before terminating an agent session.');
+    const answer=await vscode.window.showWarningMessage(`Terminate "${name}"?`,{modal:true,detail:'This closes this terminal and stops its shell. Any tmux session attached through this terminal will keep running.'},'Terminate');
+    if(answer!=='Terminate'||!isOpen(terminal))return;
+    // A shell may have launched an agent while the dialog was open. Recheck
+    // through Sessions, which requires its own session-specific confirmation.
+    if(await actions.terminateTerminal?.(terminal)){refresh();return;}
+    if(sessionForTerminal(terminal)||name!==(titleForTerminal(terminal)||terminal.name))throw new Error('The terminal changed. Choose Terminate Terminal again.');
+    if(isOpen(terminal))terminal.dispose();
+    refresh();
+   }catch(error){await vscode.window.showErrorMessage('Unable to terminate terminal: '+error.message);}
+   finally{terminating.delete(terminal);}
   }),
   vscode.commands.registerCommand('agentGlue.moveSelectorTerminal',moveToOwnTerminal),
   vscode.commands.registerCommand('agentGlue.splitSelectorTerminal',async terminal=>{

@@ -42,6 +42,11 @@ function activate(context){
     return cwd||terminal.shellIntegration?.cwd||terminal.creationOptions?.cwd;
   },terminal=>api?.titleForTerminal?.(terminal)||terminal.name,{
     identityForTerminal:terminal=>api?.identityForTerminal?.(terminal),
+    terminateTerminal:async terminal=>{
+      const link=await sessionsApi();
+      if(link&&!link.terminateTerminal)throw new Error('Update Agent Glue Sessions before terminating a terminal.');
+      return link?link.terminateTerminal(terminal):false;
+    },
     renameTerminal:async(terminal,title)=>{
       const link=await sessionsApi();
       if(link&&!link.renameTerminal)throw new Error('Update Agent Glue Sessions before renaming an agent terminal.');

@@ -535,6 +535,49 @@ function renameTerminal(terminal, title) {
     return work;
 }
 
+function terminalOperation(task) {
+    const work = operationQueue.catch(() => {}).then(task);
+    operationQueue = work.catch(() => {});
+    return work;
+}
+
+async function terminateTerminal(terminal) {
+    const target = await terminalOperation(async () => {
+        if (!vscode.window.terminals.includes(terminal)) throw new Error('This terminal is no longer open.');
+        const snapshot = await refreshTerminalMappings();
+        if (!snapshot.complete) throw new Error('Session discovery is unavailable. Try again after Refresh.');
+        const session = terminalSessions.get(terminal);
+        if (!session) return undefined;
+        const live = snapshot.liveBySession.get(session);
+        if (!validIdentity(live?.identity)) throw new Error('Cannot verify this tmux session. Refresh and try again.');
+        return {session, identity:live.identity, title:terminal.name};
+    });
+    if (!target) return false; // Companion confirms an ordinary terminal close.
+    const answer = await vscode.window.showWarningMessage(`Terminate "${target.title}"?`, {
+        modal:true,
+        detail:`This stops tmux session "${target.session}", including its agent and all processes running in that session. All attached tabs will disconnect. Running work cannot be recovered by reloading VS Code.`
+    }, 'Terminate');
+    if (answer !== 'Terminate') return true;
+    await terminalOperation(async () => {
+        if (!vscode.window.terminals.includes(terminal)) throw new Error('This terminal is no longer open.');
+        const snapshot = await refreshTerminalMappings();
+        if (!snapshot.complete || terminalSessions.get(terminal) !== target.session
+            || snapshot.liveBySession.get(target.session)?.identity !== target.identity) {
+            throw new Error('The terminal session changed while confirmation was open. Choose Terminate Terminal again.');
+        }
+        const [server, id, created] = target.identity.split(':');
+        // Check identity inside tmux as well, so a server restart between the
+        // metadata read and this command cannot kill a reused session ID.
+        const condition = `#{&&:#{==:#{pid},${server}},#{==:#{session_created},${created}}}`;
+        const {stdout} = await execFileAsync('tmux', ['if-shell', '-F', '-t', id + ':', condition,
+            `kill-session -t '${id}'`, 'display-message -p agent-glue-target-changed'], DISCOVERY_OPTIONS);
+        if (stdout.trim()) throw new Error('The tmux session changed. Nothing was terminated; refresh and try again.');
+        forgetTerminal(terminal);
+        terminal.dispose();
+    });
+    return true;
+}
+
 async function attachSessions({ quiet = false, force = false } = {}) {
     const { complete, unresolved, sessions, terminals, liveBySession } = await refreshTerminalMappings();
     if (!complete) return;
@@ -675,7 +718,7 @@ function activate(context) {
         void schedule('attachPoll', () => attachSessions({ quiet: true }));
     }, ATTACH_POLL_INTERVAL_MS);
     context.subscriptions.push({ dispose: () => clearInterval(attachPoll) });
-    return { renameTerminal, identityForTerminal: terminal => terminalSessionIdentities.get(terminal), handoffProfiles: [...AGENT_PROGRAMS], forkSession: (source,destination,options) => {
+    return { renameTerminal, terminateTerminal, identityForTerminal: terminal => terminalSessionIdentities.get(terminal), handoffProfiles: [...AGENT_PROGRAMS], forkSession: (source,destination,options) => {
         const result=operationQueue.catch(()=>{}).then(()=>require('./fork.cjs').forkSession(source,destination,{exec:execFileAsync,createTerminal:options=>vscode.window.createTerminal(options),register:(session,terminal)=>{terminalSessions.set(terminal,session);addSessionTerminal(session,terminal);},handoffDirectory:path.join(context.globalStorageUri.fsPath,'handoffs')},options));
         operationQueue=result.catch(error=>warn('fork',error));return result;
     }, terminalForSession: session => [...(sessionTerminals.get(session) || [])].find(t => vscode.window.terminals.includes(t)), sessionForTerminal: terminal => terminalSessions.get(terminal),

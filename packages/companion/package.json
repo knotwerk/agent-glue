@@ -1,5 +1,5 @@
 {
-  "version": "0.1.87",
+  "version": "0.1.88",
   "activationEvents": [
     "onStartupFinished"
   ],
@@ -153,6 +153,10 @@
       {
         "command": "agentGlue.markSelectorUnread",
         "title": "Mark Unread"
+      },
+      {
+        "command": "agentGlue.terminateSelectorTerminal",
+        "title": "Terminate Terminal\u2026"
       }
     ],
     "viewsContainers": {
@@ -301,6 +305,11 @@
           "command": "agentGlue.markSelectorUnread",
           "when": "view == agentGlue.terminalSelector && viewItem =~ /^agentGlueAgent/",
           "group": "2_status@2"
+        },
+        {
+          "command": "agentGlue.terminateSelectorTerminal",
+          "when": "view == agentGlue.terminalSelector",
+          "group": "9_terminate"
         }
       ],
       "commandPalette": [
@@ -326,6 +335,10 @@
         },
         {
           "command": "agentGlue.markSelectorUnread",
+          "when": "false"
+        },
+        {
+          "command": "agentGlue.terminateSelectorTerminal",
           "when": "false"
         }
       ]

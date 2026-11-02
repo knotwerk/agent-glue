@@ -60,8 +60,15 @@ let output='',startupError;server.on('error',error=>{startupError=error;});serve
   assert.equal(await page.getByText('Loading terminals…',{exact:true}).isVisible(),false);
   const trust=page.getByRole('button',{name:'Trust Folder & Continue'});if(await trust.isVisible())await trust.click();
   await page.screenshot({path:path.join(dir,'before.png')});
+  const chooseMenu=async item=>{
+   await item.click();
+   // VS Code sometimes uses the first click to focus a newly opened menu.
+   // Wait for dismissal before sending Enter, avoiding a second activation.
+   try{await item.waitFor({state:'hidden',timeout:1000});}
+   catch{if(await item.isVisible())await item.press('Enter',{timeout:1000}).catch(()=>{});}
+  };
   await page.getByRole('treeitem').filter({hasText:'UI Beta'}).first().click({button:'right'});
-  const renameMenu=page.getByRole('menuitem',{name:/Rename Terminal/});await renameMenu.click();if(await renameMenu.isVisible())await renameMenu.press('Enter');
+  const renameMenu=page.getByRole('menuitem',{name:/Rename Terminal/});await chooseMenu(renameMenu);
   const box=page.locator('.quick-input-widget input');await box.waitFor({state:'visible',timeout:10000});
   await box.fill('UI Renamed');await box.press('Enter');
   await page.getByRole('treeitem').filter({hasText:'UI Renamed'}).first().waitFor({timeout:10000});
@@ -85,7 +92,7 @@ let output='',startupError;server.on('error',error=>{startupError=error;});serve
   await page.waitForTimeout(500);await color('amber');
   signal('Stop',{background_tasks:[{type:'shell',status:'completed'}]});
   await color('green-new');await renamed.click();await page.waitForTimeout(2200);await page.keyboard.press('F1');const commands=page.locator('.quick-input-widget input');await commands.fill('>Agent Glue: Try Terminal Selector Beside Terminals');await page.waitForTimeout(300);await commands.press('Enter');await color('green');
-  await renamed.click({button:'right'});const unread=page.getByRole('menuitem',{name:'Mark Unread',exact:true});await unread.click();if(await unread.isVisible())await unread.press('Enter');await color('green-new');
+  await renamed.click({button:'right'});const unread=page.getByRole('menuitem',{name:'Mark Unread',exact:true});await chooseMenu(unread);await color('green-new');
   await page.screenshot({path:path.join(dir,'unread.png')});
   assert.equal(fs.readFileSync(path.join(dir,'saved-title'),'utf8'),'UI Renamed');
   const activationCount=()=>fs.readFileSync(path.join(dir,'activations'),'utf8').length,beforeReload=activationCount();
@@ -95,7 +102,12 @@ let output='',startupError;server.on('error',error=>{startupError=error;});serve
   assert.equal(await restored.count(),1);assert.equal(await page.getByRole('treeitem').filter({hasText:'UI Beta'}).count(),0);
   await color('green-new');
 
-  console.log(JSON.stringify({passed:true,checks:['shell becomes named agent row with status dot','confirmed rename and dot survive reload without duplicate','loading without provider warning','rename exact terminal','hook events to amber/red/green','running service amber, stopped service green','folder hover survives heartbeat refreshes','selected colour preserved','finished ring','read delay','mark unread'],dir,state}));
+  const alpha=page.getByRole('treeitem').filter({hasText:'UI Alpha'}).first();
+  const terminate=async()=>{await alpha.click({button:'right'});const item=page.getByRole('menuitem',{name:/Terminate Terminal/});await chooseMenu(item);};
+  await terminate();await page.getByRole('button',{name:'Cancel',exact:true}).click();await alpha.waitFor();
+  await terminate();await page.getByRole('button',{name:'Terminate',exact:true}).click();await alpha.waitFor({state:'hidden'});
+  assert.equal(await page.getByRole('treeitem').filter({hasText:'UI Renamed'}).count(),1);
+  console.log(JSON.stringify({passed:true,checks:['terminate context menu cancels or closes only the selected synthetic terminal','shell becomes named agent row with status dot','confirmed rename and dot survive reload without duplicate','loading without provider warning','rename exact terminal','hook events to amber/red/green','running service amber, stopped service green','folder hover survives heartbeat refreshes','selected colour preserved','finished ring','read delay','mark unread'],dir,state}));
  }catch(e){console.error(e.stack);console.error('UI artifacts: '+dir);if(browser){const p=browser.contexts()[0]?.pages()[0];if(p){await p.screenshot({path:path.join(dir,'failure.png')});fs.writeFileSync(path.join(dir,'failure.txt'),await p.locator('body').innerText());}}process.exitCode=1;
  }finally{try{await browser?.close();}finally{server.kill('SIGTERM');}}
 })();

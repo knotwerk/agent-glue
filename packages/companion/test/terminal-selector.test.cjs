@@ -215,3 +215,28 @@ test('selector waits for session rename confirmation and leaves the native label
  registerSelector(h.vscode,h.context,()=> 'claude-one',undefined,undefined,undefined,{renameTerminal:async()=>{throw Error('Session unavailable');}});
  await h.commands.get('agentGlue.renameSelectorTerminal')(h.a);assert.deepEqual(h.calls,[]);assert.match(errors[0],/Session unavailable/);
 });
+
+test('Terminate is context-menu only and a shell closes only after modal confirmation',async()=>{
+ const h=host();registerSelector(h.vscode,h.context);let closed=0,answer;
+ h.b.dispose=()=>{closed++;h.vscode.window.terminals=[h.a];};h.a.dispose=()=>assert.fail('wrong terminal');
+ h.vscode.window.showWarningMessage=async(message,options,action)=>{assert.match(message,/Same/);assert.equal(options.modal,true);assert.match(options.detail,/tmux.*keep running/);assert.equal(action,'Terminate');return answer;};
+ const run=h.commands.get('agentGlue.terminateSelectorTerminal');await run(h.b);assert.equal(closed,0);
+ answer='Terminate';await run(h.b);assert.equal(closed,1);await run(h.b);assert.equal(closed,1);
+ const manifest=require('../package.json'),entries=manifest.contributes.menus['view/item/context'].filter(m=>m.command==='agentGlue.terminateSelectorTerminal');
+ assert.equal(entries.length,1);assert.equal(entries[0].when,'view == agentGlue.terminalSelector');assert.ok(!entries[0].group.startsWith('inline'));
+});
+
+test('agent termination delegates to Sessions and repeated clicks do not open multiple confirmations',async()=>{
+ const h=host();let finish,calls=0;
+ registerSelector(h.vscode,h.context,()=> 'claude-one',undefined,undefined,undefined,{terminateTerminal:async terminal=>{assert.equal(terminal,h.b);calls++;return new Promise(resolve=>{finish=resolve;});}});
+ h.vscode.window.showWarningMessage=()=>assert.fail('session confirmation belongs to Sessions');h.b.dispose=()=>assert.fail('Sessions owns agent termination');
+ const action=h.commands.get('agentGlue.terminateSelectorTerminal'),pending=action(h.b);await action(h.b);assert.equal(calls,1);finish(true);await pending;
+});
+
+test('a shell that becomes an agent while confirmation is open needs a session confirmation',async()=>{
+ const h=host();let mapped=false,calls=0,disposed=0;
+ h.b.dispose=()=>{disposed++;};
+ registerSelector(h.vscode,h.context,()=>mapped?'claude-new':undefined,undefined,undefined,undefined,{terminateTerminal:async()=>{calls++;return mapped;}});
+ h.vscode.window.showWarningMessage=async()=>{mapped=true;return 'Terminate';};
+ await h.commands.get('agentGlue.terminateSelectorTerminal')(h.b);assert.equal(calls,2);assert.equal(disposed,0);
+});

@@ -96,6 +96,9 @@ on macOS, dictation and clipboard images.
   Open the terminal for two seconds to clear it, or right-click **Mark Unread** to
   bring it back. Read marks survive reloads. Right-click also offers **Rename
   Terminal** and **New Terminal**, which opens zsh in that terminal's folder.
+  **Terminate Terminal…** is available only in the right-click menu and asks for
+  confirmation: it stops a mapped agent’s tmux session and its running processes,
+  or closes an ordinary shell. A terminated tmux session will not reattach on reload.
   Working timers require a recorded start event.
   **Enable Live Terminal Status** installs local observer hooks for existing standard
   Claude/Codex account directories. Review all eight Agent Glue hooks through

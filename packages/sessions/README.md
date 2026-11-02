@@ -79,6 +79,11 @@ shell connects. Unidentified tmux tabs ask you to retry instead of reporting a
 local-only rename as saved. Session, client and process discovery run concurrently
 when process IDs are ready; unresolved IDs never block the shared queue.
 
+Companion’s **Terminate Terminal…** menu action explicitly confirms the target
+session before stopping it. It rechecks the session identity after confirmation
+and inside tmux before terminating; cancelled or stale confirmations leave it
+running. All clients attached to that session disconnect.
+
 Sessions never closes or recreates a terminal just to update its title. A tab
 with a fixed startup label may keep that label after a tmux-side rename; use
 VS Code's Rename Terminal action if needed. Its session mapping follows the

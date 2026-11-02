@@ -6,14 +6,14 @@ const path=require('node:path');
 const vm=require('node:vm');
 function host(options={}){
  const commands=new Map(),listeners={},calls=[],messages=[],execOptions=[],terminals=options.terminals||[];
- const optionsRename=options.rename;
+ const optionsRename=options.rename,optionsExecFile=options.execFile;
  let session='claude-fixture-20261014_120000',title='Fixture agent';
  const dispose=()=>({dispose(){}});
  const context={subscriptions:[],globalStorageUri:{fsPath:'/fake/storage'},globalState:options.globalState||{get:()=>undefined,update:async()=>{}}};
  const vscode={workspace:{isTrusted:true,workspaceFolders:[{uri:{fsPath:'/fixture/workspace'}}]},extensions:{all:[]},commands:{registerCommand:(name,fn)=>{commands.set(name,fn);return dispose();}},tasks:{registerTaskProvider:(name,provider)=>{listeners.tasks=provider;return dispose();}},TaskScope:{Workspace:1},Task:class{constructor(...args){this.args=args;}},ProcessExecution:class{constructor(...args){this.args=args;}},window:{terminals,showInformationMessage(message){messages.push(message);},showWarningMessage(){},onDidChangeTerminalState:fn=>{listeners.change=fn;return dispose();},onDidCloseTerminal:fn=>{listeners.close=fn;return dispose();},onDidOpenTerminal:fn=>{listeners.open=fn;return dispose();},createTerminal:options=>{const terminal={...options,creationOptions:options,processId:Promise.resolve(42),dispose(){throw new Error('Unexpected terminal destruction');}};terminals.push(terminal);return terminal;}}};
  const child={
   exec(command,settings,callback){if(typeof settings==='function'){callback=settings;settings=undefined;}calls.push(command);execOptions.push(settings);if(options.exec)return options.exec(command,settings,callback);let stdout='';if(command.includes('list-sessions'))stdout=options.sessions?options.sessions():[session,title,'','1700000000'].join('\x1f')+'\n';if(command.includes('list-clients'))stdout=options.clients?.()||'';if(command.startsWith('ps '))stdout=options.processes?.()||'';callback(null,stdout,'');},
-  execFile(file,args,options,callback){if(typeof options==='function')callback=options;calls.push({file,args,options});let stdout='';if(file==='tmux'&&args[0]==='display-message')stdout='/fixture/actual-agent-project\n';if(file.endsWith('agent-tmux-rename.zsh')&&optionsRename){try{return callback(null,optionsRename(args)+'\n','');}catch(error){return callback(error,'','');}}if(file.endsWith('agent-tmux-rename.zsh')){session='claude-renamed-20261014_120000';title=args[1];stdout=session+'\n';}callback(null,stdout,'');}
+  execFile(file,args,options,callback){if(typeof options==='function')callback=options;calls.push({file,args,options});if(optionsExecFile)return optionsExecFile(file,args,options,callback);let stdout='';if(file==='tmux'&&args[0]==='display-message')stdout='/fixture/actual-agent-project\n';if(file.endsWith('agent-tmux-rename.zsh')&&optionsRename){try{return callback(null,optionsRename(args)+'\n','');}catch(error){return callback(error,'','');}}if(file.endsWith('agent-tmux-rename.zsh')){session='claude-renamed-20261014_120000';title=args[1];stdout=session+'\n';}callback(null,stdout,'');}
  };
  // Node promisify honors this result shape for native child_process functions.
  for(const name of ['exec','execFile'])child[name][require('node:util').promisify.custom]=(...args)=>new Promise((resolve,reject)=>child[name](...args,(error,stdout,stderr)=>error?reject(error):resolve({stdout,stderr})));
@@ -419,4 +419,50 @@ test('restored helper with a ready PID but a late client retains its token mappi
  const h=host({terminals:[terminal],globalState:savedState(),sessions:oneSession});
  await h.api.refresh();await h.api.refresh();assert.equal(h.terminals.length,1);
  assert.equal(h.api.sessionForTerminal(terminal),'claude-one');assert.equal(h.api.identityForTerminal(terminal),'500:$1:1700000000');
+});
+
+test('terminating an agent requires named confirmation and stops only its verified session',async()=>{
+ let stopped=false,disposed=0;
+ const h=host({sessions:()=>stopped?'':oneSession(),execFile:(file,args,options,callback)=>{
+  assert.equal(file,'tmux');assert.deepEqual(Array.from(args),['if-shell','-F','-t','$1:','#{&&:#{==:#{pid},500},#{==:#{session_created},1700000000}}',"kill-session -t '$1'",'display-message -p agent-glue-target-changed']);
+  assert.equal(options.timeout,1500);stopped=true;callback(null,'','');
+ }});await h.api.refresh();const terminal=h.terminals[0];terminal.dispose=()=>{disposed++;h.terminals.splice(h.terminals.indexOf(terminal),1);};
+ h.vscode.window.showWarningMessage=async(message,options,action)=>{
+  assert.match(message,/One/);assert.equal(options.modal,true);assert.match(options.detail,/claude-one/);assert.match(options.detail,/all processes/);assert.equal(action,'Terminate');assert.equal(stopped,false);return action;
+ };
+ await h.api.terminateTerminal(terminal);await h.api.refresh();assert.equal(stopped,true);assert.equal(disposed,1);assert.equal(h.terminals.length,0,'terminated sessions do not reattach');
+});
+
+test('cancel and dismiss never terminate an agent or close its tab',async()=>{
+ for(const answer of [undefined,'Cancel']){
+  const h=host({sessions:oneSession});await h.api.refresh();const terminal=h.terminals[0];
+  h.vscode.window.showWarningMessage=async()=>answer;assert.equal(await h.api.terminateTerminal(terminal),true);
+  assert.equal(h.terminals.length,1);assert.ok(!h.calls.some(c=>c.file==='tmux'&&c.args[0]==='if-shell'));
+ }
+});
+
+test('termination rejects changed identities, moved clients and closed tabs after confirmation',async()=>{
+ for(const change of ['identity','client','closed']){
+  let changed=false;const terminal={name:'One',processId:Promise.resolve(71),dispose(){assert.fail('must not close an unconfirmed target');}};
+  const h=host({terminals:[terminal],sessions:()=>oneSession().replace('500',changed&&change==='identity'?'501':'500'),clients:()=>changed&&change==='client'?'':'71\x1fclaude-one\n'});await h.api.refresh();
+  h.vscode.window.showWarningMessage=async()=>{changed=true;if(change==='closed')h.terminals.length=0;return 'Terminate';};
+  await assert.rejects(h.api.terminateTerminal(terminal),/changed|no longer open/);
+  assert.ok(!h.calls.some(c=>c.file==='tmux'&&c.args[0]==='if-shell'));
+ }
+});
+
+test('tmux failure or an atomic identity mismatch leaves the terminal open',async()=>{
+ for(const failed of [false,true]){
+  const h=host({sessions:oneSession,execFile:(file,args,options,callback)=>callback(failed?Error('fixture failure'):null,failed?'':'agent-glue-target-changed\n','')});await h.api.refresh();
+  h.vscode.window.showWarningMessage=async()=> 'Terminate';await assert.rejects(h.api.terminateTerminal(h.terminals[0]),/changed|fixture failure/);
+  assert.equal(h.terminals.length,1);
+ }
+});
+
+test('ordinary shells are handed back for local confirmation and pending confirmation does not block discovery',async()=>{
+ const shell={name:'zsh',processId:Promise.resolve(99)},h=host({terminals:[shell],sessions:oneSession});await h.api.refresh();
+ assert.equal(await h.api.terminateTerminal(shell),false);
+ let confirm;h.vscode.window.showWarningMessage=()=>new Promise(resolve=>{confirm=resolve;});
+ const pending=h.api.terminateTerminal(h.terminals[1]);await new Promise(resolve=>setImmediate(resolve));
+ await completes(h.api.refresh());confirm(undefined);await pending;
 });
