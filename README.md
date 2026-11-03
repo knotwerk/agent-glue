@@ -58,6 +58,8 @@ on macOS, dictation and clipboard images.
   ambiguous identities fail explicitly rather than selecting another chat.
   After choosing the folder, keep **Same CLI / account** for that native fork,
   or choose another supported Claude/Codex account to start a fresh conversation.
+  On Linux, the native fork follows the running CLI’s account even if its tmux
+  name has an outdated account prefix.
   The new agent receives source session details, profile-directory mappings and
   saved task status, plus optional `/status` output you paste. This is a handoff,
   not a conversion of chat history. The original terminal stays untouched.

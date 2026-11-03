@@ -230,7 +230,7 @@ function activate(context){
       let options;
       if(Array.isArray(link.handoffProfiles)){
         const choice=await vscode.window.showQuickPick([
-          {label:'Same CLI / account',description:source.profile+' · native conversation fork',profile:source.profile},
+          {label:'Same CLI / account',description:'Use the running CLI account · native conversation fork',profile:source.profile},
           ...link.handoffProfiles.filter(program=>program!==source.profile).map(program=>({label:program,description:'New conversation with a handoff note',profile:program}))
         ],{title:'Continue with which CLI / account?',placeHolder:'Same account preserves history; another account receives source details and saved status'});
         if(!choice)return;

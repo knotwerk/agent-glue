@@ -45,6 +45,10 @@ MIT licensed, free to reuse and modify.
   right-click a terminal tab → **Agent Glue: Fork Conversation** and confirm
   the destination folder, then choose a CLI/account. The same account uses a
   native conversation fork and requires an identifiable saved conversation.
+  On Linux, it reads the running process’s account-directory setting, so an old
+  tmux name cannot accidentally select another login. Claude conversation IDs
+  come from its live `agents --json` listing matched to the exact process and
+  start time, with bounded PID metadata as a fallback for older CLIs.
   A different account starts a fresh conversation with a private handoff note
   containing source metadata, saved task status and optional pasted `/status`
   details. The note includes the known profile mappings and points to `~/.zshrc`

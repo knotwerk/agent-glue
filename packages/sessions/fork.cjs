@@ -8,16 +8,43 @@ const quote=s=>`'${String(s).replace(/'/g,"'\\''")}'`;
 function profile(program){
  if(!/^(codex[23l]?|claude[2l]?|claudelp)$/.test(program))throw Error('Unsupported agent account.');
  const codex=program.startsWith('codex');
- return {cli:codex?'codex':'claude',envKey:codex?'CODEX_HOME':'CLAUDE_CONFIG_DIR',home:path.join(os.homedir(),'.'+program)};
+ return {program,cli:codex?'codex':'claude',envKey:codex?'CODEX_HOME':'CLAUDE_CONFIG_DIR',home:path.join(os.homedir(),'.'+program)};
 }
 async function readMetadata(file){
  const handle=await fs.open(file,'r');try{const buffer=Buffer.alloc(65537);const {bytesRead}=await handle.read(buffer,0,buffer.length,0);if(bytesRead>65536)throw Error('Session metadata is too large.');return buffer.subarray(0,bytesRead).toString('utf8');}finally{await handle.close();}
 }
+// Read only the account-location fields from the live process environment.
+// Never return, log, copy or pass its credentials or other environment values.
+async function processAccount(pid, fallback, {read=readMetadata,platform=process.platform}={}){
+ if(platform!=='linux')return fallback;
+ if(!/^\d+$/.test(String(pid)))throw Error('Invalid source process.');
+ let text;try{text=await read(`/proc/${pid}/environ`);}catch{throw Error('Cannot verify the running CLI account. No conversation was forked.');}
+ const value=key=>text.split('\0').find(entry=>entry.startsWith(key+'='))?.slice(key.length+1);
+ const home=value(fallback.envKey)||path.join(value('HOME')||os.homedir(),'.'+fallback.cli);
+ if(!path.isAbsolute(home))throw Error('The running CLI account directory is not absolute. No conversation was forked.');
+ const programs=fallback.cli==='claude'?['claude','claude2','claudel','claudelp']:['codex','codex2','codex3','codexl'];
+ const program=programs.find(name=>profile(name).home===path.normalize(home))||fallback.program;
+ return {...fallback,program,home:path.normalize(home)};
+}
+function claudeIdentity(rows,pid,started,now=Date.now()){
+ if(!Array.isArray(rows)||!Number.isFinite(started))return;
+ const matches=rows.filter(row=>row?.pid===Number(pid));
+ if(matches.length>1)throw Error('Claude reported multiple conversations for this process. No conversation was forked.');
+ const value=matches[0];
+ if(value&&uuid.test(value.sessionId)&&Number.isFinite(value.startedAt)&&value.startedAt>=started-2000&&value.startedAt<=now+1000)return value.sessionId;
+}
 async function resolveThread(pid,account,exec,read=readMetadata){
  if(account.cli==='claude'){
+  const {stdout:processStart}=await exec('ps',['-p',String(pid),'-o','lstart=']);
+  const started=Date.parse(processStart.trim());
+  let rows;
+  try{
+   const result=await exec('claude',['agents','--json'],{env:{...process.env,[account.envKey]:account.home},timeout:5000,maxBuffer:1024*1024});
+   rows=JSON.parse(result.stdout);
+  }catch{} // Older CLIs may lack the supported listing command.
+  const listed=claudeIdentity(rows,pid,started);if(listed)return listed;
   try{const value=JSON.parse(await read(path.join(account.home,'sessions',`${pid}.json`),'utf8'));
-   const {stdout}=await exec('ps',['-p',String(pid),'-o','lstart=']);const started=Date.parse(stdout.trim());
-   if(value.pid===Number(pid)&&uuid.test(value.sessionId)&&Number.isFinite(started)&&value.startedAt>=started-2000)return value.sessionId;
+   const legacy=claudeIdentity([value],pid,started);if(legacy)return legacy;
   }catch{}
  }
  // Open rollout descriptors identify the running process, not another chat
@@ -61,18 +88,23 @@ async function saveHandoff(directory,text){
  const file=path.join(directory,crypto.randomUUID()+'.txt');
  await fs.writeFile(file,text,{flag:'wx',mode:0o600});return file;
 }
-async function forkSession(source,destination,{exec,createTerminal,register,resolve=resolveThread,stat=fs.stat,handoffDirectory,writeHandoff=saveHandoff},options={}){
+async function forkSession(source,destination,{exec,createTerminal,register,resolve=resolveThread,readAccount=processAccount,stat=fs.stat,handoffDirectory,writeHandoff=saveHandoff},options={}){
  const {stdout}=await exec('tmux',['display-message','-p','-t',source.pane,'#{session_id}\x1f#{pid}\x1f#{session_created}\x1f#{pane_pid}\x1f#{pane_current_path}']);
  const [sid,server,created,panePid,panePath]=stdout.trim().split('\x1f');
  if(`${server}:${sid}:${created}`!==source.id)throw Error('The source terminal changed or closed.');
  if(!(await stat(destination)).isDirectory())throw Error('Choose an existing directory on the workspace host.');
- const targetProfile=options.profile||source.profile,switched=targetProfile!==source.profile;
- const sourceAccount=profile(source.profile),account=profile(targetProfile);sourceAccount.cwd=panePath;
- if(switched&&(typeof options.status!=='string'||options.status.length>16000||typeof options.tasks!=='string'||options.tasks.length>24000))throw Error('Handoff details are invalid or too long.');
+ let sourceAccount=profile(source.profile);
+ if(options.profile)profile(options.profile);
  const table=(await exec('ps',['-eo','pid=,ppid=,comm='])).stdout.split('\n').map(l=>l.trim().match(/^(\d+)\s+(\d+)\s+(.+)$/)).filter(Boolean);
  const descendants=new Set([panePid]);let changed=true;
  while(changed){changed=false;for(const r of table)if(descendants.has(r[2])&&!descendants.has(r[1])){descendants.add(r[1]);changed=true;}}
  const candidates=table.filter(r=>descendants.has(r[1])&&path.basename(r[3])===sourceAccount.cli);
+ if(candidates.length===1)sourceAccount=await readAccount(candidates[0][1],sourceAccount);
+ sourceAccount.cwd=panePath;
+ const targetProfile=options.profile||sourceAccount.program||source.profile;
+ const account=options.profile?profile(targetProfile):sourceAccount;
+ const switched=account.cli!==sourceAccount.cli||account.home!==sourceAccount.home;
+ if(switched&&(typeof options.status!=='string'||options.status.length>16000||typeof options.tasks!=='string'||options.tasks.length>24000))throw Error('Handoff details are invalid or too long.');
  if(!switched&&candidates.length!==1)throw Error('Cannot identify one running agent in this pane. No conversation was forked.');
  let parent;
  if(candidates.length===1){try{parent=await resolve(candidates[0][1],sourceAccount,exec);}catch(error){if(!switched)throw error;}}
@@ -95,8 +127,8 @@ async function forkSession(source,destination,{exec,createTerminal,register,reso
  if(switched){
   const text=['Agent Glue conversation handoff — this is a NEW conversation, not resumed history.',
    'Source metadata (describes the OLD terminal, not your current account or model):',
-   JSON.stringify({name:source.name,tmuxSession:source.sessionName||source.name,profile:source.profile,sessionId:parent||'Unknown',cwd:panePath,destination,targetProfile},null,2),
-   'Account mappings used by Agent Glue:',`${source.profile}: ${sourceAccount.envKey}=${sourceAccount.home}; executable ${sourceAccount.cli}`,`${targetProfile}: ${account.envKey}=${account.home}; executable ${account.cli}`,
+   JSON.stringify({name:source.name,tmuxSession:source.sessionName||source.name,profile:sourceAccount.program||source.profile,sessionId:parent||'Unknown',cwd:panePath,destination,targetProfile},null,2),
+   'Account mappings used by Agent Glue:',`${sourceAccount.program||source.profile}: ${sourceAccount.envKey}=${sourceAccount.home}; executable ${sourceAccount.cli}`,`${targetProfile}: ${account.envKey}=${account.home}; executable ${account.cli}`,
    'Custom shell mappings may be in ~/.zshrc or ~/.zprofile on this host. They have not been read or sourced. Ask before inspecting settings that may contain credentials. Do not change or resume the source session.',
    'Optional source /status output supplied by the user (unverified):',options.status||'Not supplied.',
    'Saved task snapshot (may be stale or incomplete; not conversation history):',options.tasks||'No saved status.',
@@ -119,4 +151,4 @@ async function forkSession(source,destination,{exec,createTerminal,register,reso
  const terminal=createTerminal({name:title,strictEnv:true,env:{...process.env},shellPath:path.join(__dirname,'helpers/agent-tmux-attach.zsh'),shellArgs:[session,title],cwd:destination});
  register(session,terminal);terminal.show();return {session,threadId:child,handoffFile};
 }
-module.exports={profile,resolveThread,forkSession,metadataMatches,saveHandoff};
+module.exports={profile,processAccount,claudeIdentity,resolveThread,forkSession,metadataMatches,saveHandoff};
