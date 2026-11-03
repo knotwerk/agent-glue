@@ -965,6 +965,18 @@ test('web app actions forward client links and open in the main editor, with ext
  await panel.webview.send({id:'app',action:'diagnostics'});assert.match(details,/does not guarantee a rendered page/);assert.equal(opened.length,2);
 });
 
+test('registered app labels and project ownership appear in sidebar and All, with escaped markup',async t=>{
+ const {WebApps}=require('../packages/companion/src/web-apps.cjs'),original=WebApps.prototype.scan;
+ const item={id:'project-app',sessionIds:['$1'],source:'project',label:'Preview <one>',terminal:'Project · fixture',cwd:'/fixture',url:'http://localhost:5178/',running:true,kind:'page'};
+ WebApps.prototype.scan=async function(){this.items=[item];return this.items;};t.after(()=>{WebApps.prototype.scan=original;});
+ const env=await start(t),view=await openSidebar(env);await settle(view);
+ assert.equal(lastState(view).webApps[0].label,'Preview <one>');assert.equal(lastState(view).webAppsActiveTotal,1);
+ await env.log.commands.get('agentGlue.webApps')();
+ const panel=env.log.panels.find(p=>p.viewType==='agentGlue.webApps');
+ assert.ok(panel.webview.html.includes('<td>Preview &lt;one&gt;</td>'));assert.ok(panel.webview.html.includes('<td>Project registration</td>'));
+ assert.ok(panel.webview.html.includes('<td>Project · fixture</td>'));assert.ok(!panel.webview.html.includes('<td>Preview <one></td>'));
+});
+
 test('fork folder prompt freezes its source and duplicate clicks do not create duplicate forks',async t=>{
  const forks=[];const env=await start(t,{sessionsApi:{sessionForTerminal:()=>undefined,forkSession:async(...args)=>forks.push(args)}});await openSidebar(env);
  let input,accept,hide;env.vscode.ThemeIcon=class{constructor(id){this.id=id;}};

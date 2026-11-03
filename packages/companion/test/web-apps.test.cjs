@@ -42,6 +42,7 @@ test('HTTP probes distinguish pages, services, errors and redirects without foll
  const http=require('node:http');const {probe,appStatus,appDetails}=require('../src/web-apps.cjs');
  const requests=[];const server=http.createServer((req,res)=>{
   requests.push(req.method+' '+req.url);
+  assert.match(req.headers.accept,/text\/html/);
   const statuses={'/missing':404,'/error':500,'/redirect':302};res.statusCode=statuses[req.url]||200;
   res.setHeader('Content-Type',req.url==='/api'?'application/json':'text/html; charset=utf-8');
   if(req.url==='/redirect')res.setHeader('Location','http://example.invalid/');
@@ -57,6 +58,38 @@ test('HTTP probes distinguish pages, services, errors and redirects without foll
   const framed=await probe(base+'/framed');assert.equal(framed.frameRestricted,true);assert.match(appDetails({...framed,source:'process'}),/homepage guessed/);
   assert.ok(requests.every(r=>r.startsWith('HEAD ')));assert.equal(requests.length,6);
  }finally{await new Promise(resolve=>server.close(resolve));}
+});
+
+test('HTML negotiation discovers an SPA fallback without fetching its body',async()=>{
+ const http=require('node:http'),{probe}=require('../src/web-apps.cjs');let count=0;
+ const server=http.createServer((req,res)=>{
+  count++;assert.equal(req.method,'HEAD');
+  const html=req.headers.accept?.includes('text/html');res.statusCode=html?200:404;
+  res.setHeader('Content-Type',html?'text/html':'text/plain');res.end();
+ });
+ await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));
+ try{assert.equal((await probe(`http://127.0.0.1:${server.address().port}/`)).kind,'page');assert.equal(count,1);}
+ finally{await new Promise(resolve=>server.close(resolve));}
+});
+
+test('registered project apps cover sibling terminals once without claiming process ownership',async()=>{
+ const {forSession,appName,appSource}=require('../src/web-apps.cjs');let live=true,registered=true;
+ const apps=new WebApps(async()=>{throw Error('no process tools');},async()=>({running:live,kind:live?'page':'unreachable'}),{registered:async cwd=>cwd.startsWith('/repo')&&registered?{root:'/repo',apps:[{id:'preview',label:'Workspace preview',url:'http://localhost:5178/'}]}:undefined});
+ const a={id:'a',name:'First',cwd:'/repo/one'},b={id:'b',name:'Second',cwd:'/repo/two'},c={id:'c',name:'Other',cwd:'/other'};
+ apps.observe(a,'http://localhost:5178/');
+ apps.items=[{id:'stale',source:'process',sessionId:'a',url:'http://localhost:5178/'}];
+ let rows=await apps.refresh([a,b,c],true);assert.equal(rows.length,1);
+ const item=rows[0];assert.equal(item.source,'project');assert.equal(item.sessionId,undefined);
+ assert.ok(forSession(item,'a'));assert.ok(forSession(item,'b'));assert.ok(!forSession(item,'c'));
+ assert.equal(appName(item),'Workspace preview');assert.equal(appSource(item),'Project registration');
+ live=false;rows=await apps.refresh([a,b,c],true);assert.equal(rows[0].kind,'unreachable');
+ registered=false;rows=await apps.refresh([a,b,c],true);assert.equal(rows.length,1);assert.equal(rows[0].source,'link');
+});
+
+test('invalid registry does not block observed links and cwd changes invalidate discovery cache',async()=>{
+ const visited=[];const apps=new WebApps(async()=>{throw Error('missing');},async()=>true,{registered:async cwd=>{visited.push(cwd);throw Error('bad registry');}});
+ const a={id:'a',name:'Agent',cwd:'/one'};apps.observe(a,'http://localhost:3000/');
+ assert.equal((await apps.refresh([a])).length,1);await apps.refresh([{...a,cwd:'/two'}]);assert.deepEqual(visited,['/one','/two']);
 });
 
 test('agent-owned listeners are excluded even when mentioned elsewhere; child web servers survive',async()=>{

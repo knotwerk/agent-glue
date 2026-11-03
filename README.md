@@ -69,7 +69,8 @@ on macOS, dictation and clipboard images.
   **Open in browser** or **Copy link** through SSH forwarding. **All** lists
   services across agent terminals and projects. Entries distinguish webpages, APIs/services, redirects, HTTP errors and unreachable endpoints. Multiple page links on the same server are retained. Ports owned directly by Claude/Codex processes are excluded, even when their URLs appear in terminal text; web servers launched by those agents remain discoverable. APIs/services, protected endpoints (401/403) and unreachable addresses are hidden by default and can be shown in All. Discovered ports are labelled as guessed homepages; **Diagnostics** explains the response and discovery source, with an external-browser option for blank pages. These are HTTP checks, not proof that a page rendered successfully. Process discovery uses `ss` or
   `lsof`; local URLs still work without those tools. Detached services can only
-  be associated if their ancestry was observed or their URL was shared.
+  be associated if their ancestry was observed, their URL was shared, or they
+  have an explicit [project registration](#register-a-project-web-app).
 - **Keep accounts separate.** Run multiple Claude or Codex logins side by side
   using separate CLI configuration directories—for example, personal and client
   subscriptions. Agent Glue keeps their terminals organised and supports the
@@ -233,6 +234,30 @@ helper recognizes `codex2`/`codex3`/`codexl` and `claude2`/`claudel`/`claudelp`,
 each using the corresponding hidden directory under your home. Arbitrary custom
 aliases and extra CLI flags need manual restart. Agent Glue does not add
 permission-bypass flags or manage your credentials.
+
+## Register a project web app
+
+For a preview started in a separate service terminal, add
+`.local/agent-glue/web-apps.json` at the Git project root. Keep
+`.local/agent-glue/` in that project's `.gitignore`:
+
+```json
+{
+  "version": 1,
+  "apps": [
+    { "id": "preview", "label": "Project preview", "url": "http://127.0.0.1:5178/" }
+  ]
+}
+```
+
+Refresh Agent Glue. The named app appears for agent terminals in this project
+and once in **All**, labelled **Project registration**. It does not claim that
+an agent terminal owns the server. A linked worktree uses its own registration
+if present, otherwise the primary checkout's; an empty `apps` list disables
+that fallback. Only local HTTP/HTTPS URLs are accepted, with at most 30 entries
+in a 64 KB file. Invalid entries are skipped; invalid files and symlinks are
+ignored. Remove an entry when it is no longer wanted. Agent Glue checks responses
+with a bounded HTML-aware HEAD request; it never starts or restarts the service.
 
 ## Everyday controls
 

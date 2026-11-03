@@ -30,7 +30,14 @@ See the [setup guide](https://github.com/knotwerk/agent-glue#readme).
 - **Web apps**: a single collapsed line above Files shows active counts for
   this terminal and all terminals. Expand to see filenames or page paths beside
   links; use **All** for the cross-terminal list. Links use VS Code SSH forwarding. Right-click for browser
-  and copy-link actions.
+  and copy-link actions. Servers in separate service terminals can be registered
+  at the Git root in `.local/agent-glue/web-apps.json`:
+  `{"version":1,"apps":[{"id":"preview","label":"Project preview","url":"http://127.0.0.1:5178/"}]}`.
+  Keep this folder ignored by Git, then refresh. Named entries appear for the
+  project's agent terminals and once in All, marked **Project registration**.
+  Linked worktrees fall back to the primary checkout unless they have their own
+  registry. Only local HTTP/HTTPS addresses are accepted; Agent Glue does not
+  start or restart the server.
 - **Attachments**: drop files (including HTML), paste screenshots, or paste
   absolute local file paths into the note (up to 200 MB per file upload). Path-only
   drops and pasted paths use the local helper to copy files to the SSH host.
