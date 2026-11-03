@@ -45,6 +45,12 @@ MIT licensed, free to reuse and modify.
   right-click a terminal tab → **Agent Glue: Fork Conversation** and confirm
   the destination folder, then choose a CLI/account. The same account uses a
   native conversation fork and requires an identifiable saved conversation.
+  Native forks receive a startup notice: existing work, processes and subagents
+  remain with the parent. The child should acknowledge, wait for its first task,
+  then suggest focused compaction while preserving the ownership boundary.
+  Compaction is not automatically triggered. The notice is saved privately in
+  extension storage; the child tmux session records its path and parent
+  conversation ID. These instructions do not isolate shared project files.
   On Linux, it reads the running process’s account-directory setting, so an old
   tmux name cannot accidentally select another login. Claude conversation IDs
   come from its live `agents --json` listing matched to the exact process and

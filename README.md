@@ -53,6 +53,11 @@ on macOS, dictation and clipboard images.
 - **Branch a conversation.** Right-click a terminal tab and choose **Agent Glue: Fork Conversation**,
   confirm or browse to a folder on the workspace host, and continue the saved
   history in a separately named tmux terminal. The original keeps running.
+  The child receives a notice that inherited tasks, processes and subagents
+  belong to the parent. It is asked to acknowledge and wait for its first task,
+  then suggest focused compaction while preserving that ownership boundary.
+  A private copy of the notice and the parent identity are retained. This is
+  guidance to the agent; it does not automatically compact or isolate files.
   Different folders do not copy project files or create Git worktrees. Forking
   needs a discoverable saved conversation and a CLI with native fork support;
   ambiguous identities fail explicitly rather than selecting another chat.

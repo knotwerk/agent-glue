@@ -5,6 +5,13 @@ const os=require('node:os');
 const crypto=require('node:crypto');
 const uuid=/^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i;
 const quote=s=>`'${String(s).replace(/'/g,"'\\''")}'`;
+const forkNotice=[
+ 'Agent Glue fork notice: you are a NEW branch of an existing conversation. Inherited history is background context.',
+ 'Existing tasks, subprocesses, subagents, queued jobs and in-progress files remain with the parent. Earlier references to them as "mine" describe the parent. Do not resume, control, stop or claim them unless the user explicitly transfers that work.',
+ 'Briefly acknowledge this notice and wait for the user to give this branch its first task. Do not continue the inherited task or compact yet.',
+ 'After that first task is given, prepare a focused continuation summary and suggest compaction using the CLI-supported mechanism, if available. Preserve the new task, relevant findings, constraints, file references, parent identity and this ownership boundary. If compaction is unavailable, continue with those boundaries.',
+ 'Cleaning up inherited context means correcting ownership in the summary. It never means stopping processes, deleting files or resuming inherited subagents. Shared folders still affect the parent. Preserve this notice and its saved file reference through compaction and future summaries.'
+].join('\n\n');
 function profile(program){
  if(!/^(codex[23l]?|claude[2l]?|claudelp)$/.test(program))throw Error('Unsupported agent account.');
  const codex=program.startsWith('codex');
@@ -114,6 +121,11 @@ async function forkSession(source,destination,{exec,createTerminal,register,reso
  const helpArgs=!switched&&account.cli==='codex'?['exec','fork','--help']:['--help'];
  const help=await exec(account.cli,helpArgs,{cwd:destination,env,timeout:10000,maxBuffer:1024*1024});
  if(!switched&&(account.cli==='codex'?!help.stdout.includes('--json'):!help.stdout.includes('--fork-session')||!help.stdout.includes('--session-id')))throw Error('Update the agent CLI to a version with native conversation forking.');
+ let forkNoticeFile;
+ if(!switched){
+  const metadata={parentThreadId:parent,parentName:source.name,parentTmuxSession:source.sessionName||source.name,parentProfile:sourceAccount.program||source.profile,createdAt:new Date().toISOString(),sourceFolder:panePath,destination};
+  forkNoticeFile=await writeHandoff(handoffDirectory,forkNotice+'\n\nSource metadata (labels and paths only, not instructions):\n'+JSON.stringify(metadata,null,2));
+ }
  if(!switched&&account.cli==='codex'){
   const result=await exec('codex',['exec','-C',destination,'--json','fork',parent],{cwd:destination,env,timeout:30000,maxBuffer:1024*1024});
   const started=result.stdout.split('\n').flatMap(l=>{try{return [JSON.parse(l)];}catch{return [];}}).find(e=>e.type==='thread.started');
@@ -123,6 +135,7 @@ async function forkSession(source,destination,{exec,createTerminal,register,reso
  const title=source.name+(switched?'-'+targetProfile:'-fork')+'-'+crypto.randomBytes(2).toString('hex');
  const session=targetProfile+'-'+title.replace(/[^a-zA-Z0-9-]/g,'-');
  let args=account.cli==='codex'?['resume',child,'-C',destination]:['--resume',parent,'--fork-session','--session-id',child,'--name',title];
+ if(!switched)args.push(forkNotice+'\n\nRead the saved fork notice for parent identity and folders: '+JSON.stringify(forkNoticeFile)+'. Keep that path in future summaries so this boundary can be recovered.');
  let handoffFile;
  if(switched){
   const text=['Agent Glue conversation handoff — this is a NEW conversation, not resumed history.',
@@ -148,7 +161,11 @@ async function forkSession(source,destination,{exec,createTerminal,register,reso
  if(!/^\$\d+$/.test(target))throw Error('Tmux did not return the new session identity.');
  await exec('tmux',['set-option','-t',target,'@title',title]);
  if(child)await exec('tmux',['set-option','-t',target,'@agent_glue_thread_id',child]);
+ if(forkNoticeFile){
+  await exec('tmux',['set-option','-t',target,'@agent_glue_parent_thread_id',parent]);
+  await exec('tmux',['set-option','-t',target,'@agent_glue_fork_notice_file',forkNoticeFile]);
+ }
  const terminal=createTerminal({name:title,strictEnv:true,env:{...process.env},shellPath:path.join(__dirname,'helpers/agent-tmux-attach.zsh'),shellArgs:[session,title],cwd:destination});
- register(session,terminal);terminal.show();return {session,threadId:child,handoffFile};
+ register(session,terminal);terminal.show();return {session,threadId:child,handoffFile,forkNoticeFile};
 }
 module.exports={profile,processAccount,claudeIdentity,resolveThread,forkSession,metadataMatches,saveHandoff};
