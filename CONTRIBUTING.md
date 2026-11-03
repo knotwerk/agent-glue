@@ -148,7 +148,10 @@ versions, VSIX versions and failures in ignored development output.
   contents. Native downloads must work without ZeroTier. Test optional browser
   links separately on a private ZeroTier network.
 - Upload a file and use the Mac clipboard-image action. Check ignored inbox files
-  have private permissions. Reject oversized files and a non-ignored inbox.
+  have private permissions. A project without inbox ignore coverage should gain
+  a local Git exclusion automatically, preserving existing rules and tracked
+  files. Check linked worktrees too. Reject oversized files and an inbox that
+  remains unignored because of a higher-priority project rule.
   Switching terminals during a batch must not change its recipient.
 - Dictate into the note field on a Mac with the required permissions. Copy and
   paste must preserve the chosen recipient; paste must not send Enter. Closing

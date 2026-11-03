@@ -124,8 +124,8 @@ class Uploads {
     if (!/^[a-zA-Z0-9-]{1,80}$/.test(message.id) || this.active.has(message.id)) throw new Error('Invalid upload identity.');
     if (!Number.isSafeInteger(message.size)||message.size<0||message.size>MAX_BYTES) throw new Error('Files must be 200 MB or smaller.');
     const inbox=path.join(root,'.local/agent-glue/inbox');
-    // Require ignore coverage before storing any attachment.
-    await this.exec('git',['-c','core.fsmonitor=false','-C',root,'check-ignore','-q','--','.local/agent-glue/inbox/probe']).catch(()=>{throw new Error('Ignore .local/agent-glue/ in this project before uploading.');});
+    // Add a repository-local exclusion when needed; never modify tracked files.
+    await require('./upload-ignore.cjs').ensureInboxIgnored(root,this.exec);
     let current=root;
     for(const segment of ['.local','agent-glue','inbox']) {
       current=path.join(current,segment);

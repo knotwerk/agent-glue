@@ -41,6 +41,8 @@ See the [setup guide](https://github.com/knotwerk/agent-glue#readme).
 - **Attachments**: drop files (including HTML), paste screenshots, or paste
   absolute local file paths into the note (up to 200 MB per file upload). Path-only
   drops and pasted paths use the local helper to copy files to the SSH host.
+  The project inbox is automatically added to Git's local exclusions if needed;
+  uploading requires no `.gitignore` edit or commit. Existing rules are preserved.
   Quoted paths with spaces and file URLs are supported. Markdown and HTML previews also support files up to 200 MB.
   Clipboard images retain a separate 25 MB limit. They are
   stored in the Git-ignored `.local/agent-glue/inbox/` of the agent's project,

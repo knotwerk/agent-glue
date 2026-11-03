@@ -192,10 +192,15 @@ npm run package
    open **Agent Glue** in the activity bar. The view title offers Files, PRs, Status (pulse icon), and
    Refresh. Mention an existing file path to populate Files.
 
-For attachments, local feedback and task records, ignore `.local/agent-glue/`
-in the agent's Git project. Use the project's `.gitignore`, or add the pattern
-to `.git/info/exclude` for a local-only choice. This does not untrack files that
-were already committed.
+Uploads automatically add `/.local/agent-glue/inbox/` to Git's local
+`info/exclude` when needed, including in linked worktrees. No `.gitignore` edit
+or commit is required. Existing exclusions are preserved and Git ignore coverage
+is checked before writing attachments. An explicit project rule that unignores
+the inbox must be resolved first.
+
+For local feedback and task records, also ignore `.local/agent-glue/` in the
+agent's Git project using `.gitignore` or `.git/info/exclude`. These rules do not
+untrack files that were already committed.
 
 ## Multiple accounts and client subscriptions
 

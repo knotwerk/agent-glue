@@ -232,11 +232,17 @@ test('Uploads enforces the 200 MB size limit and integer sizes', async () => {
   await uploads.close();
 });
 
-test('Uploads refuses to store anything when .local is not git-ignored', async () => {
+test('Uploads automatically excludes the inbox locally without modifying project files', async () => {
   const root = gitProject('upload-unignored', { ignoreLocal: false });
+  const exclude=path.join(root,'.git/info/exclude');fs.writeFileSync(exclude,'# Keep this\nexisting-pattern');
   const uploads = new core.Uploads();
-  await assert.rejects(uploads.start({ id: 'x', name: 'f', size: 1 }, root, 't'));
-  assert.equal(fs.existsSync(path.join(root, '.local')), false);
+  const result=await upload(uploads,root,'x','coalgebra-arc3.md','hello');
+  assert.equal(fs.readFileSync(result.path,'utf8'),'hello');
+  const contents=fs.readFileSync(exclude,'utf8');assert.ok(contents.startsWith('# Keep this\nexisting-pattern\n'));assert.match(contents,/^\/\.local\/agent-glue\/inbox\/$/m);
+  assert.equal(fs.existsSync(path.join(root,'.gitignore')),false);
+  const git=require('node:child_process').execFileSync;
+  assert.equal(git('git',['-C',root,'status','--porcelain','--untracked-files=all'],{encoding:'utf8'}),'');
+  await upload(uploads,root,'y','again.md','hello');assert.equal(fs.readFileSync(exclude,'utf8'),contents);
   assert.equal(uploads.active.size, 0);
 });
 
@@ -244,7 +250,7 @@ test('Uploads checks ignore coverage through git with the inbox probe path', asy
   const calls = [];
   const root = tempDir('upload-injected');
   const uploads = new core.Uploads(async (cmd, args) => { calls.push([cmd, args]); throw new Error('not ignored'); });
-  await assert.rejects(uploads.start({ id: 'x', name: 'f', size: 1 }, root, 't'), /Ignore \.local/);
+  await assert.rejects(uploads.start({ id: 'x', name: 'f', size: 1 }, root, 't'), /Could not check Git exclusions/);
   assert.equal(calls[0][0], 'git');
   assert.deepEqual(calls[0][1], ['-c', 'core.fsmonitor=false', '-C', root, 'check-ignore', '-q', '--', '.local/agent-glue/inbox/probe']);
   assert.equal(fs.existsSync(path.join(root, '.local')), false);

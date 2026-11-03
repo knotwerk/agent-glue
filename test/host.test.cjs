@@ -257,14 +257,20 @@ test('upload failures report an error and release the transfer', async t => {
   assert.match((await waitFor(view, m => m.type === 'uploadError' && m.id === 'huge', 'size error')).error, /200 MB/);
 });
 
-test('uploads are refused when the project does not ignore .local', async t => {
+test('first upload fixes missing local exclusion and completes without an error or gitignore edit', async t => {
   const env = await start(t);
   fs.writeFileSync(path.join(env.project, '.gitignore'), '');
   const view = await openSidebar(env);
   view.webview.send({ type: 'uploadStart', id: 'x-1', name: 'f', size: 1 });
-  const error = await waitFor(view, m => m.type === 'uploadError', 'uploadError');
-  assert.match(error.error, /Ignore \.local/);
-  assert.equal(fs.existsSync(path.join(env.project, '.local')), false);
+  await waitFor(view, m => m.type === 'uploadReady', 'uploadReady');
+  view.webview.send({type:'uploadChunk',id:'x-1',offset:0,data:Buffer.from('x').toString('base64')});
+  await waitFor(view,m=>m.type==='uploadAck','uploadAck');
+  view.webview.send({type:'uploadFinish',id:'x-1'});
+  await waitFor(view,m=>m.type==='uploadComplete','uploadComplete');
+  assert.equal(fs.readFileSync(lastState(view).draft.attachments[0].path,'utf8'),'x');
+  assert.equal(fs.readFileSync(path.join(env.project,'.gitignore'),'utf8'),'');
+  assert.match(fs.readFileSync(path.join(env.project,'.git/info/exclude'),'utf8'),/\/\.local\/agent-glue\/inbox\//);
+  assert.ok(!view.webview.posted.some(m=>m.type==='uploadError'));
 });
 
 test('changing the recipient is refused during an upload', async t => {
