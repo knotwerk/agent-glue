@@ -29,42 +29,67 @@ function sessionForTerminal(terminal,list,mappedName){
 }
 async function discoverReferences(text,cwd,{projectRoot=project,stat=fs.stat}={}){
   const root=await projectRoot(cwd).catch(()=>cwd);
-  const primary=references(text,cwd);
+  const primary=references(text,cwd,{positions:true}),stats=new Map();
+  const inspect=file=>{if(!stats.has(file))stats.set(file,Promise.resolve().then(()=>stat(file)).catch(()=>undefined));return stats.get(file);};
   const resolve=async file=>{
     const alternate=path.resolve(root,file.referencePath);
     for(const candidate of [file,...(alternate!==file.path?[{...file,id:alternate,path:alternate}]:[])]){
-      try{const info=await stat(candidate.path);if(info.isFile())return {...candidate,...(Number.isFinite(info.mtimeMs)?{modified:info.mtimeMs}:{})};}catch{}
+      const info=await inspect(candidate.path);if(info?.isFile())return {...candidate,...(Number.isFinite(info.mtimeMs)?{modified:info.mtimeMs}:{})};
     }
   };
   const found=await Promise.all(primary.map(resolve));
   // CLIs sometimes draw hard line breaks themselves, which tmux capture -J
   // cannot join. Recover bounded path-only continuations, verifying the result
   // on disk before showing it. Never infer pin/remove directives from a join.
-  const lines=text.replace(/\x1b\[[0-?]*[ -/]*[@-~]/g,'').split('\n');
+  const lines=terminalText(text).split('\n');
   let budget=200;
-  for(let i=0;i<lines.length-1&&budget>0;i++){
-    const start=lines[i].trimEnd().match(/(?:^|[\s`"'(*])((?:\/|\.\.?\/|[A-Za-z0-9_-]+\/)[A-Za-z0-9_./%+~-]*)$/);
+  // Recover recent mentions first when the bounded search budget runs out.
+  for(let i=lines.length-2;i>=0&&budget>0;i--){
+    const line=lines[i].trimEnd();
+    const marked=line.match(/(?:\]\(<?|[`"'])((?:\/|\.\.?\/|[\p{L}\p{N}_.-]+\/)[^<>`"']*)$/u);
+    const start=marked||line.match(/(?:^|[\s(*])((?:\/|\.\.?\/|[\p{L}\p{N}_.-]+\/)[^\s<>`"'|]*)$/u);
     if(!start)continue;
-    let joined=start[1];
+    let variants=[start[1]];
     // A complete existing file is never joined to the next line.
-    if(await resolve({referencePath:joined,path:path.resolve(cwd,joined)}))continue;
-    for(let j=i+1;j<Math.min(lines.length,i+9)&&budget>0;j++){
-      const next=lines[j].trim().match(/^([A-Za-z0-9_./%+~-]+)(?:[`"')*]+)?$/);
-      if(!next)break;
-      joined+=next[1];if(joined.length>4096)break;
-      budget--;
-      const candidate=references(joined,cwd).find(file=>file.referencePath===joined);
-      if(!candidate)continue;
-      const existing=await resolve(candidate);
-      if(existing){found.push(existing);break;}
+    budget--;
+    if(await resolve({referencePath:start[1],path:path.resolve(cwd,start[1])}))continue;
+    for(let j=i+1;j<Math.min(lines.length,i+65)&&budget>0;j++){
+      const next=lines[j].trim();
+      if(!next||/^(?:[-*•]\s|\[(?:pin|unpin|remove|share)\]|>|│)/i.test(next))break;
+      // Spaces are considered only inside an explicitly quoted/linked path.
+      if(!marked&&/\s/.test(next))break;
+      if(/[<>]/.test(next.replace(/>\)?$/,'')))break;
+      variants=[...new Set(variants.flatMap(value=>[value+next,...(marked?[value+' '+next]:[])]))].filter(value=>value.length<=4096).slice(0,8);
+      if(!variants.length)break;
+      if(budget<variants.length)break; // Check every retained alternative before accepting one.
+      const matches=new Map();
+      for(const joined of variants){
+        budget--;
+        // A synthetic quote retains spaces; references strips Markdown endings
+        // and line-number suffixes using the same rules as single-line paths.
+        const cleaned=joined.replace(/(?:[`"']|>\)?|\)\*{0,2}|\*{1,2}|[.,;])+$/,'');
+        const candidates=references(marked?'`'+cleaned+'`':cleaned,cwd);
+        const candidate=candidates.find(file=>file.referencePath===cleaned||cleaned.startsWith(file.referencePath+':'));
+        if(!candidate)continue;
+        const existing=await resolve(candidate);
+        if(existing)matches.set(existing.path,existing);
+      }
+      if(matches.size){
+        if(matches.size===1){const existing=[...matches.values()][0];found.push({...existing,sourceLine:i,mentionKey:crypto.createHash('sha256').update(lines.slice(Math.max(0,i-2),j+1).join('\n')+'|'+existing.path).digest('hex')});}
+        break; // Ambiguous joins are never guessed.
+      }
+      if(/[`"']$|>\)$/.test(next))break;
     }
   }
-  return [...new Map(found.filter(Boolean).map(f=>[f.id,f])).values()];
+  const ordered=new Map();
+  for(const {sourceLine,...file} of found.filter(Boolean).sort((a,b)=>a.sourceLine-b.sourceLine)){ordered.delete(file.id);ordered.set(file.id,file);}
+  return [...ordered.values()];
 }
-function references(text,cwd) {
+function terminalText(text){return text.replace(/\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)/g,'').replace(/\x1b\[[0-?]*[ -/]*[@-~]/g,'');}
+function references(text,cwd,{positions=false}={}) {
   const found = new Map();
   // capture-pane -J joins soft wraps; discovery also handles hard-wrapped paths.
-  const lines=text.replace(/\x1b\[[0-?]*[ -/]*[@-~]/g,'').split('\n');
+  const lines=terminalText(text).split('\n');
   for (const [lineIndex,line] of lines.entries()) {
     const pattern = /(?:\[[^\]]*\]\(<?([^)>]+\.(?:[a-zA-Z][a-zA-Z0-9]{0,15}))(?:\:\d+(?::\d+)?)?>?\)|["'`]([^"'`]+\.(?:[a-zA-Z][a-zA-Z0-9]{0,15}))["'`]|((?:\/|\.\.?\/|[A-Za-z0-9_-]+\/)?[A-Za-z0-9_.-][^\s<>"'`]*?\.(?:[a-zA-Z][a-zA-Z0-9]{0,15})))(?=$|[\s):,;#?!\]*]|\.(?=\s|$))/gi;
     for (const match of line.matchAll(pattern)) {
@@ -75,7 +100,7 @@ function references(text,cwd) {
       const marker=/^\s*\[(share|pin|unpin|remove)\]\s+/i.exec(line);
       const prior=found.get(file);
       found.delete(file); // Repeated paths take the position of their latest mention.
-      found.set(file,{id:file,path:file,mentionKey:crypto.createHash('sha256').update(lines.slice(Math.max(0,lineIndex-2),lineIndex+1).join('\n')+'|'+match.index).digest('hex'),referencePath:raw,label:path.basename(file),pinned:line.includes('[pin]'),...(prior?.action?{action:prior.action,directive:prior.directive}:{}),...(marker?{action:marker[1].toLowerCase(),directive:line.trim()}: {})});
+      found.set(file,{id:file,path:file,...(positions?{sourceLine:lineIndex}:{}),mentionKey:crypto.createHash('sha256').update(lines.slice(Math.max(0,lineIndex-2),lineIndex+1).join('\n')+'|'+match.index).digest('hex'),referencePath:raw,label:path.basename(file),pinned:line.includes('[pin]'),...(prior?.action?{action:prior.action,directive:prior.directive}:{}),...(marker?{action:marker[1].toLowerCase(),directive:line.trim()}: {})});
     }
   }
   return [...found.values()];

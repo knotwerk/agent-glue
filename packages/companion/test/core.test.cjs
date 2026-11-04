@@ -501,6 +501,59 @@ test('hard-wrapped archive paths are reconstructed only when the joined file exi
  assert.deepEqual(separate.map(f=>f.path),['/synthetic/a.zip','/synthetic/other.zip']);
 });
 
+test('wrapped paths support Unicode, parentheses, Markdown links and terminal hyperlink escapes',async()=>{
+ const full='/synthetic/reports/Ísland-2026/brand_(final)/very-long-company-report.zip';
+ const chunks=[full.slice(0,27),full.slice(27,52),full.slice(52)];
+ const options={projectRoot:async()=>'/synthetic',stat:async file=>{if(file!==full)throw Error('missing');return {isFile:()=>true,mtimeMs:123};}};
+ for(const text of [chunks.join('\n  '),'[Download]('+chunks.join('\n  ')+')','`'+chunks.join('\n  ')+'`.','\x1b]8;;file://'+full+'\x1b\\'+chunks.join('\n  ')+'\x1b]8;;\x1b\\']){
+  const found=await core.discoverReferences(text,'/synthetic',options);assert.deepEqual(found.map(f=>f.path),[full],JSON.stringify(text));assert.equal(found[0].modified,123);
+ }
+});
+test('quoted and linked paths recover spaces at a word wrap and mid-word wraps together',async()=>{
+ const full='/synthetic/Brand Intelligence/annual reports/company presentation.html';
+ const body='/synthetic/Brand\n  Intelligence/annual rep\n  orts/company presentation.html';
+ for(const text of ['`'+body+'`','[Report](<'+body+'>)']){
+  const found=await core.discoverReferences(text,'/synthetic',{projectRoot:async()=>'/synthetic',stat:async file=>({isFile:()=>file===full})});
+  assert.deepEqual(found.map(f=>f.path),[full]);
+ }
+});
+test('narrow terminals recover paths across more than eight lines',async()=>{
+ const full='/synthetic/'+Array.from({length:10},(_,i)=>'folder-'+i).join('/')+'/report.md';
+ const text=full.match(/.{1,10}/g).join('\n  ');
+ const found=await core.discoverReferences(text,'/synthetic',{projectRoot:async()=>'/synthetic',stat:async file=>({isFile:()=>file===full})});
+ assert.deepEqual(found.map(f=>f.path),[full]);
+});
+test('long report paths survive a range of terminal widths and split positions',async()=>{
+ const full='/synthetic/project/.local/brand-reports/company-(final)/Ísland_2026_very-long-report-name.zip';
+ const options={projectRoot:async()=>'/synthetic',stat:async file=>({isFile:()=>file===full})};
+ for(let width=18;width<full.length;width++){
+  const parts=[];for(let i=0;i<full.length;i+=width)parts.push(full.slice(i,i+width));
+  for(const text of [parts.join('\n  '),'[Download]('+parts.join('\n  ')+')']){
+   assert.deepEqual((await core.discoverReferences(text,'/synthetic',options)).map(f=>f.path),[full],`width ${width}: ${text}`);
+  }
+ }
+});
+test('recent wrapped mentions are recovered before old noise uses the bounded budget',async()=>{
+ const full='/synthetic/very-long-folder/latest-report.html';let calls=0;
+ const text=Array.from({length:250},(_,i)=>`/missing/old-${i}\nfragment`).join('\n')+'\n'+full.slice(0,25)+'\n'+full.slice(25);
+ const found=await core.discoverReferences(text,'/synthetic',{projectRoot:async()=>'/synthetic',stat:async file=>{calls++;return {isFile:()=>file===full};}});
+ assert.deepEqual(found.map(f=>f.path),[full]);assert.ok(calls<450,calls);
+});
+test('wrapped and single-line references retain mention order, directives and stable recency',async()=>{
+ const old='/synthetic/reports/older.md',latest='/synthetic/latest.md';
+ const text=old.slice(0,20)+'\n'+old.slice(20)+'\n'+latest;
+ const options={projectRoot:async()=>'/synthetic',stat:async file=>({isFile:()=>[old,latest].includes(file)})};
+ const found=await core.discoverReferences(text,'/synthetic',options);
+ assert.deepEqual(found.map(f=>f.path),[old,latest]);assert.ok(found.every(f=>!('sourceLine' in f)));
+ const first=core.observe([],found),again=core.observe(first,await core.discoverReferences(text,'/synthetic',options));assert.deepEqual(first,again);assert.equal(first[0].path,latest);
+ const removed=await core.discoverReferences(text+'\n[remove] '+old,'/synthetic',options);assert.equal(removed.at(-1).action,'remove');
+ const wrapped=await core.discoverReferences('[remove] '+old.slice(0,20)+'\n'+old.slice(20),'/synthetic',options);assert.equal(wrapped[0].action,undefined);
+});
+test('recovery never crosses blank lines or new list items, nor guesses ambiguous space joins',async()=>{
+ const options={projectRoot:async()=>'/synthetic',stat:async file=>({isFile:()=>['/synthetic/longfile.md','/synthetic/long file.md'].includes(file)})};
+ for(const text of ['/synthetic/long\n\nfile.md','/synthetic/long\n- file.md','`/synthetic/long\nfile.md`'])assert.deepEqual(await core.discoverReferences(text,'/synthetic',options),[],text);
+});
+
  test('discovery retains modification time and observing again updates it independently of mention time',async()=>{
    const options={projectRoot:async()=>'/synthetic',stat:async()=>({isFile:()=>true,mtimeMs:1000})};
    const found=await core.discoverReferences('image.png','/synthetic',options);

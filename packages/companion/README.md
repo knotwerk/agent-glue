@@ -16,6 +16,8 @@ See the [setup guide](https://github.com/knotwerk/agent-glue#readme).
 - **Recent Files** view: follows the selected terminal and shows recently mentioned files,
   including plain Python, CSV and image paths relative to that terminal’s folder. Use `[pin] /path/to/file.md` in terminal
   output, or **Agent Glue: Pin File**, to keep a file at the top.
+  Long paths wrapped across terminal lines are recovered when the joined file
+  exists, including Markdown links, quoted paths with spaces and Unicode names.
 - **Preview**: renders `.md`, `.markdown`, `.html` and `.htm` in a sandboxed
   panel. Mermaid diagrams render in Markdown. Project-local document links and anchors work; remote content is
   blocked, and only project-local PNG/JPEG/GIF/WebP images (up to 5 MB) appear.

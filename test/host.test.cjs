@@ -642,6 +642,16 @@ test('Discuss with agent uses the current terminal and trusted draft reference w
   assert.equal(sent.length,1);assert.match(env.log.errors.at(-1),/Select an attached agent terminal/);
 });
 
+test('wrapped report links reach the sidebar with the full path and can be opened',async t=>{
+ const relative='reports/brand-(final)/Ísland/long-company-report.csv';
+ const env=await start(t,{capture:'[Download]('+relative.slice(0,24)+'\n  '+relative.slice(24)+')'});
+ const file=path.join(env.project,relative);fs.mkdirSync(path.dirname(file),{recursive:true});fs.writeFileSync(file,'synthetic report');
+ const view=await openSidebar(env);await settle(view);
+ assert.deepEqual(lastState(view).files.map(f=>f.path),[file]);
+ await view.webview.send({type:'previewFile',id:file});await settle(view);
+ assert.ok(env.log.executed.some(([cmd,uri])=>cmd==='vscode.open'&&uri.fsPath===file));
+});
+
 test('recent source files open from the selected session outside the workspace; unknown IDs are ignored',async t=>{
   const env=await start(t,{capture:'_script_outputs/result.csv\n_script_outputs/helper.py'});
   fs.mkdirSync(path.join(env.project,'_script_outputs'));

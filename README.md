@@ -82,6 +82,8 @@ on macOS, dictation and clipboard images.
   account-directory conventions described [below](#multiple-accounts-and-client-subscriptions).
   Sign-in and credentials remain with the CLIs.
 - **Find the file.** Paths mentioned in the selected terminal appear in Files.
+  Long paths split across terminal lines are recovered when the joined file
+  exists, including Markdown links and quoted paths with spaces.
   Recent mentions and edits sort newest-first. Filter by type or time, sort by
   name, and pin useful files. Open across projects without opening another
   VS Code window; right-click to download.
