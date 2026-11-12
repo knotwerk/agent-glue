@@ -73,7 +73,15 @@ let output='',startupError;server.on('error',error=>{startupError=error;});serve
   await box.fill('UI Renamed');await box.press('Enter');
   await page.getByRole('treeitem').filter({hasText:'UI Renamed'}).first().waitFor({timeout:10000});
   await page.screenshot({path:path.join(dir,'after.png')});
-  const state=JSON.parse(fs.readFileSync(path.join(dir,'state.json')));assert.ok(state.names.includes('UI Alpha'));assert.ok(state.names.includes('UI Renamed'));assert.ok(!state.names.includes('UI Beta'));
+  // The fixture writes state every 150 ms, independently of the rendered row.
+  // Wait for that observation instead of racing it after the rename appears.
+  let state;const stateDeadline=Date.now()+5000;
+  do{
+   try{state=JSON.parse(fs.readFileSync(path.join(dir,'state.json')));}catch{}
+   if(state?.names.includes('UI Renamed'))break;
+   await page.waitForTimeout(50);
+  }while(Date.now()<stateDeadline);
+  assert.ok(state?.names.includes('UI Alpha'));assert.ok(state?.names.includes('UI Renamed'));assert.ok(!state.names.includes('UI Beta'));
   const renamed=page.getByRole('treeitem').filter({hasText:'UI Renamed'}).first();
   const color=async name=>{await page.waitForFunction(({name})=>[...document.querySelectorAll('[role=treeitem]')].some(row=>row.textContent.includes('UI Renamed')&&new RegExp('status-'+name+'-(?:dark|light)\\.svg').test(row.innerHTML)), {name});};
   const signals=[{hook_event_name:'UserPromptSubmit',session_id:'ui',at:Date.now()-1000}];

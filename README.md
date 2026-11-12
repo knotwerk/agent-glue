@@ -40,6 +40,30 @@ Install either independently. Companion needs Sessions only to focus or paste
 into an agent terminal or fork conversations. A bundled local helper supplies native downloads and,
 on macOS, dictation and clipboard images.
 
+## Latest update — 0.1.93
+
+Promoted from `dev` on 12 November 2026 after daily use. The CLI-first approach
+stays the same; this update improves the small pieces around it:
+
+- **Terminals at a glance:** coloured activity dots, unread completion rings,
+  folder hovers, saved ordering, and rename, split and fork controls. Termination
+  stays in the right-click menu with confirmation.
+- **More reliable reconnection:** less blocking startup work, fewer duplicate
+  tabs, and names and ordering preserved as shell tabs become agent sessions.
+- **Clearer conversation forks:** the running account is detected, and the child
+  receives an ownership notice before beginning a separate task. Another CLI or
+  account can receive a fresh-conversation handoff instead.
+- **Files without the extra setup:** wrapped paths are recovered, uploads add
+  their own local Git exclusion, and documents up to 200 MB can be previewed.
+- **Useful web-app links:** named project registrations cover servers in separate
+  service terminals; HTTP checks distinguish pages from services and errors.
+- **Cleaner reviews:** ordered review titles, explicit decision categories, and
+  previews of screenshots verified against the reviewed commit.
+
+To update an existing installation, pull `main`, rebuild using the commands
+below, install the new VSIXs, and run **Developer: Reload Window**. Live status
+requires the observer-hook setup described below; grey means idle or unknown.
+
 ## What gets easier
 
 - **Come back tomorrow.** Sessions reconnects to agents you started in tmux.
@@ -65,7 +89,7 @@ on macOS, dictation and clipboard images.
   or choose another supported Claude/Codex account to start a fresh conversation.
   On Linux, the native fork follows the running CLI’s account even if its tmux
   name has an outdated account prefix.
-  The new agent receives source session details, profile-directory mappings and
+  When switching accounts, the new agent receives source session details, profile-directory mappings and
   saved task status, plus optional `/status` output you paste. This is a handoff,
   not a conversion of chat history. The original terminal stays untouched.
 - **Open running apps.** Files includes a collapsed **Web apps** line with active
