@@ -108,8 +108,9 @@ Then:
 ## CI
 
 `.github/workflows/ci.yml` runs `npm ci`, `npm test`, `npm run check` and
-`npm run package` on Node 22 for Ubuntu and macOS. It does not publish and does
-not upload artifacts.
+`npm run package` on Node 22 for Ubuntu and macOS. Ubuntu installs `zsh` for
+the isolated attachment-helper test; tmux responses remain synthetic.
+It does not publish or upload artifacts.
 
 ## Documentation images
 

@@ -21,6 +21,9 @@ jobs:
         with:
           node-version: 22
           cache: npm
+      - name: Install shell test dependency
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install --yes zsh
       - name: Install from the lockfile
         run: npm ci
       - name: Test
