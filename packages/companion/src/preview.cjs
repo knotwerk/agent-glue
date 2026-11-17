@@ -6,6 +6,7 @@ const crypto=require('node:crypto');
 const parse5=require('parse5');
 const MarkdownIt=require('markdown-it');
 const {inside,supported,privatePath}=require('./core.cjs');
+const clipboard=require('./preview-clipboard.cjs');
 const escape=s=>String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const inlineJson=value=>JSON.stringify(value).replace(/</g,'\\u003c');
 const adapter=parse5.defaultTreeAdapter;
@@ -174,7 +175,8 @@ async function documentHtml(file,root,mermaidSource='',navigation) {
   // Anchor scrolling never navigates srcdoc to its embedding page's URL.
   const bridge=navigation?`<script>(()=>{const channel=${JSON.stringify(navigation?.channel||'')},siblings=${inlineJson(siblingLinks)};const scroll=anchor=>{if(!anchor)return;try{anchor=decodeURIComponent(anchor.replace(/^#/,''))}catch{}const target=document.getElementById(anchor)||Array.from(document.getElementsByName(anchor))[0];if(target){const hash='#'+encodeURIComponent(anchor);if(location.hash!==hash)location.hash=hash;target.scrollIntoView();}};document.addEventListener('click',event=>{const a=event.target.closest?.('a');if(!a)return;event.preventDefault();const ref=a.getAttribute('href')||'',id=ref==='#'?a.getAttribute('data-agent-glue-link'):Object.hasOwn(siblings,ref)?siblings[ref]:null;if(id&&channel)parent.postMessage({type:'previewLink',channel,id},'*');else if(ref.startsWith('#'))scroll(ref);},true);window.addEventListener('message',event=>{if(event.source===parent&&event.data?.type==='previewAnchor'&&event.data.channel===channel)scroll(event.data.anchor);});window.addEventListener('DOMContentLoaded',()=>requestAnimationFrame(()=>scroll(${inlineJson(String(navigation?.anchor||''))})));})();</script>`:'';
   if(bodyNode){
-    for(const n of parse5.parseFragment(mermaid+bridge).childNodes){n.parentNode=bodyNode;bodyNode.childNodes.push(n);}
+    const copyBridge=navigation?`<script>${clipboard.frameScript(navigation.channel)}</script>`:'';
+    for(const n of parse5.parseFragment(mermaid+bridge+copyBridge).childNodes){n.parentNode=bodyNode;bodyNode.childNodes.push(n);}
   }
   return `<!doctype html>${parse5.serialize(tree)}`;
 }
@@ -207,11 +209,12 @@ async function openPreview(vscode,context,file,root,panels,anchor='',linkBase,al
   panels.set(panelKey,panel);panel.onDidDispose(()=>{if(panels.get(panelKey)===panel)panels.delete(panelKey);});
   const nonce=crypto.randomBytes(18).toString('hex');
   // The srcdoc frame inherits this policy too, so it must allow the frame's inline scripts, styles and data: images.
-  panel.webview.html=`<!doctype html><html><head><meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data:; frame-src 'self';"><style>body{margin:0}nav{padding:8px;display:flex;gap:12px}iframe{border:0;width:100%;height:calc(100vh - 45px)}</style></head><body><nav><button id="source">Open source</button><button id="copy">Copy reference</button></nav><iframe title="Document preview" sandbox="allow-scripts" srcdoc="${escape(content)}"></iframe><script nonce="${nonce}">const vscode=acquireVsCodeApi();const frame=document.querySelector('iframe'),channel='${channel}';document.getElementById('source').onclick=()=>vscode.postMessage({type:'source'});document.getElementById('copy').onclick=()=>vscode.postMessage({type:'copy'});window.addEventListener('message',event=>{const m=event.data;if(event.source===frame.contentWindow){if(m?.type==='previewLink'&&m.channel===channel&&typeof m.id==='string')vscode.postMessage({type:'previewLink',channel,id:m.id});}else if(m?.type==='previewAnchor'&&typeof m.anchor==='string'){frame.contentWindow.postMessage({type:'previewAnchor',channel,anchor:m.anchor},'*');}});</script></body></html>`;
+  panel.webview.html=`<!doctype html><html><head><meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data:; frame-src 'self';"><style>body{margin:0}nav{padding:8px;display:flex;gap:12px}iframe{border:0;width:100%;height:calc(100vh - 45px)}</style></head><body><nav><button id="source">Open source</button><button id="copy">Copy reference</button><button id="copy-selection" disabled title="Copy selected document text">Copy selection</button></nav><iframe title="Document preview" sandbox="allow-scripts" srcdoc="${escape(content)}"></iframe><script nonce="${nonce}">const vscode=acquireVsCodeApi();const frame=document.querySelector('iframe'),channel='${channel}';${clipboard.outerScript()}document.getElementById('source').onclick=()=>vscode.postMessage({type:'source'});document.getElementById('copy').onclick=()=>vscode.postMessage({type:'copy'});window.addEventListener('message',event=>{const m=event.data;if(event.source===frame.contentWindow){if(m?.type==='previewLink'&&m.channel===channel&&typeof m.id==='string')vscode.postMessage({type:'previewLink',channel,id:m.id});}else if(m?.type==='previewAnchor'&&typeof m.anchor==='string'){frame.contentWindow.postMessage({type:'previewAnchor',channel,anchor:m.anchor},'*');}});</script></body></html>`;
   panel.webview.onDidReceiveMessage(async message=>{
     if(!message)return;
     try{
       if(message.type==='copy')await vscode.env.clipboard.writeText(key);
+      if(clipboard.validCopy(message,channel))await vscode.env.clipboard.writeText(message.text);
       if(message.type==='source'){
         if(!await allowedPath(root,key,allowedFiles))throw new Error('File is not tracked in this review revision.');
         await vscode.window.showTextDocument(vscode.Uri.file(await inside(root,key)),await mainEditorColumn(vscode));
@@ -224,7 +227,7 @@ async function openPreview(vscode,context,file,root,panels,anchor='',linkBase,al
         if(supported(local))await openPreview(vscode,context,local,root,panels,target.anchor,undefined,allowedFiles);
         else await vscode.commands.executeCommand('vscode.open',vscode.Uri.file(local),await mainEditorColumn(vscode));
       }
-    }catch(error){await vscode.window.showErrorMessage?.('Cannot open review link: '+error.message);}
+    }catch(error){await vscode.window.showErrorMessage?.((message.type==='copy'||message.type==='copySelection'?'Cannot copy preview text: ':'Cannot open review link: ')+error.message);}
   });
   return panel;
   })();

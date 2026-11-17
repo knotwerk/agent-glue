@@ -112,6 +112,8 @@ requires the observer-hook setup described below; grey means idle or unknown.
   name, and pin useful files. Open across projects without opening another
   VS Code window; right-click to download.
 - **Read and review.** Preview Markdown, Mermaid diagrams, images and HTML.
+  Copy selected document text with Cmd/Ctrl+C or **Copy selection**; **Copy
+  reference** copies the file path.
   Review hosted PRs or prepared local changes. Keep stable ordering, mark items
   read, and leave local feedback for your AI before anything is pushed. Prepared
   local reviews do not require a published GitHub PR.

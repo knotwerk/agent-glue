@@ -19,7 +19,9 @@ See the [setup guide](https://github.com/knotwerk/agent-glue#readme).
   Long paths wrapped across terminal lines are recovered when the joined file
   exists, including Markdown links, quoted paths with spaces and Unicode names.
 - **Preview**: renders `.md`, `.markdown`, `.html` and `.htm` in a sandboxed
-  panel. Mermaid diagrams render in Markdown. Project-local document links and anchors work; remote content is
+  panel. Select text and use Cmd/Ctrl+C, the Copy menu, or **Copy selection** to
+  copy it through VS Code's clipboard. **Copy reference** copies the file path.
+  Mermaid diagrams render in Markdown. Project-local document links and anchors work; remote content is
   blocked, and only project-local PNG/JPEG/GIF/WebP images (up to 5 MB) appear.
 - **Fork Conversation**: right-click a terminal tab, then confirm or browse to
   its destination folder and choose a CLI/account. **Same CLI / account** uses

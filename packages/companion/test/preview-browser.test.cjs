@@ -40,26 +40,28 @@ test('browser: PR Discuss with agent button sends only its action', {skip:!execu
 });
 const PNG = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==', 'base64');
 
-async function open(t, markdown, extraFiles = {}) {
+async function open(t, markdown, extraFiles = {}, filename = 'a.md') {
   const mermaid = path.join(repoRoot, 'node_modules/mermaid/dist/mermaid.min.js');
   const dir = tempDir('browser');
   const project = path.join(dir, 'proj');
   fs.mkdirSync(project);
   fs.mkdirSync(path.join(dir, 'ext/dist'), { recursive: true });
   fs.copyFileSync(mermaid, path.join(dir, 'ext/dist/mermaid.js'));
-  fs.writeFileSync(path.join(project, 'a.md'), markdown);
+  fs.writeFileSync(path.join(project, filename), markdown);
   for (const [name, data] of Object.entries(extraFiles)) fs.writeFileSync(path.join(project, name), data);
-  const vscode = { ViewColumn: { Beside: 1 }, Uri: { file: x => x }, env: { clipboard: {} }, window: { createWebviewPanel: () => ({ webview: { onDidReceiveMessage() {} }, onDidDispose() {} }) } };
-  const panel = await preview.openPreview(vscode, { extensionPath: path.join(dir, 'ext') }, path.join(project, 'a.md'), project, new Map());
+  const copied=[],messages=[];
+  const vscode = { ViewColumn: { Beside: 1 }, Uri: { file: x => x }, env: { clipboard: {writeText:async text=>copied.push(text)} }, window: { createWebviewPanel: () => ({ webview: { onDidReceiveMessage(handler) {this.handler=handler;} }, onDidDispose() {} }) } };
+  const panel = await preview.openPreview(vscode, { extensionPath: path.join(dir, 'ext') }, path.join(project, filename), project, new Map());
   const { chromium } = require('playwright');
   const browser = await chromium.launch({ executablePath });
   t.after(() => browser.close());
   const page = await browser.newPage();
+  await page.exposeFunction('dispatchPreviewMessage',async message=>{messages.push(message);await panel.webview.handler(message);});
   const requests = [];
   await page.route('**/*', route => {
     const url = route.request().url();
     if (url === 'http://agent-glue.test/') {
-      const html = panel.webview.html.replace('<script nonce', '<script>window.acquireVsCodeApi=()=>({getState:()=>undefined,setState(){},postMessage(){}})</script><script nonce');
+      const html = panel.webview.html.replace('<script nonce', '<script>window.acquireVsCodeApi=()=>({getState:()=>undefined,setState(){},postMessage(message){return window.dispatchPreviewMessage(message);}})</script><script nonce');
       return route.fulfill({ contentType: 'text/html', body: html });
     }
     requests.push(url);
@@ -68,8 +70,38 @@ async function open(t, markdown, extraFiles = {}) {
   await page.goto('http://agent-glue.test/');
   const frame = page.frames()[1];
   await frame.waitForFunction(() => document.readyState === 'complete');
-  return { page, frame, requests };
+  return { page, frame, requests, copied, messages, channel:panel.webview.html.match(/channel='([a-f0-9]+)'/)[1] };
 }
+
+for(const filename of ['a.md','a.html'])test(`browser: ${filename} selected text copies through shortcuts, toolbar and outer Copy command`,{skip:!executablePath&&'no Chromium available'},async t=>{
+ const source=filename.endsWith('.md')?'# Document\n\nCopy this café text.':'<h1>Document</h1><p>Copy this café text.</p><textarea>Editable example</textarea>';
+ const {page,frame,copied}=await open(t,source,{},filename);
+ const select=async()=>{await frame.locator('p').click();await frame.evaluate(()=>{const range=document.createRange();range.selectNodeContents(document.querySelector('p'));const selection=window.getSelection();selection.removeAllRanges();selection.addRange(range);});};
+ const waitCopies=async count=>{for(let i=0;i<100&&copied.length<count;i++)await page.waitForTimeout(20);assert.equal(copied.length,count);};
+ await select();await page.keyboard.press('Control+c');await waitCopies(1);assert.equal(copied[0],'Copy this café text.');
+ await select();await page.keyboard.press('Meta+c');await waitCopies(2);assert.equal(copied[1],copied[0]);
+ await page.getByRole('button',{name:'Copy selection',exact:true}).click();await waitCopies(3);assert.equal(copied[2],copied[0]);
+ // VS Code routes menu Copy to the outer webview's execCommand.
+ await page.evaluate(()=>{document.querySelector('#source').focus();document.execCommand('copy');});await waitCopies(4);assert.equal(copied[3],copied[0]);
+ assert.equal(await frame.evaluate(()=>window.origin),'null');
+ if(filename.endsWith('.html')){
+  await frame.locator('textarea').focus();await frame.locator('textarea').selectText();await page.keyboard.press('Control+c');await waitCopies(5);assert.equal(copied[4],'Editable example');
+ }
+});
+
+test('browser: document scripts and unrelated windows cannot silently write the clipboard',{skip:!executablePath&&'no Chromium available'},async t=>{
+ const {page,frame,copied,channel}=await open(t,'<p>Select text</p>',{},'a.html');
+ // Playwright evaluate itself grants transient activation. Send the document's
+ // unsolicited request after that activation expires, as an idle page would.
+ await frame.evaluate(channel=>setTimeout(()=>{
+  parent.postMessage({type:'previewCopySelection',channel,text:'unsolicited'},'*');
+  document.dispatchEvent(new KeyboardEvent('keydown',{key:'c',ctrlKey:true,bubbles:true}));
+ },5500),channel);
+ await page.waitForTimeout(5700);
+ await page.evaluate(channel=>window.postMessage({type:'previewCopySelection',channel,text:'wrong window'},'*'),channel);
+ await page.waitForTimeout(100);assert.deepEqual(copied,[]);
+ assert.equal(await page.getByRole('button',{name:'Copy selection',exact:true}).isDisabled(),true);
+});
 
 test('browser: mermaid diagrams render inside the sandboxed preview', { skip: !executablePath && 'no Chromium available' }, async t => {
   const { frame } = await open(t, '# T\n\n```mermaid\ngraph TD\nA-->B\n```\n');

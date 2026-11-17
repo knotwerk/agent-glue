@@ -248,6 +248,16 @@ test('openPreview webview messages copy or open only the validated file', async 
   assert.deepEqual(events.shown, [file]);
 });
 
+test('preview selection copy validates its channel and bounded text without reading the clipboard',async()=>{
+ const p=project({'a.html':'<p>hello</p>'}),{vscode,events}=fakeVscode();
+ const panel=await preview.openPreview(vscode,{extensionPath:extensionDir()},path.join(p.root,'a.html'),p.root,new Map());
+ const channel=panel.webview.html.match(/channel='([a-f0-9]+)'/)[1];
+ for(const message of [{type:'copySelection',text:'missing channel'},{type:'copySelection',channel:'wrong',text:'wrong channel'},{type:'copySelection',channel,text:{}},{type:'copySelection',channel,text:''},{type:'copySelection',channel,text:'x'.repeat(1024*1024+1)},{type:'paste',channel}])await panel.webview.handler(message);
+ assert.deepEqual(events.clipboard,[]);
+ await panel.webview.handler({type:'copySelection',channel,text:'Selected café\nSecond line'});
+ assert.deepEqual(events.clipboard,['Selected café\nSecond line']);
+});
+
 test('openPreview rejects outside files and a missing mermaid bundle without opening a panel', async () => {
   const p = project({ 'a.md': 'a' });
   fs.writeFileSync(path.join(p.base, 'out.md'), 'x');
