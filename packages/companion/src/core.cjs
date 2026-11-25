@@ -10,7 +10,7 @@ function parseSessions(output) {
   return output.trim().split('\n').filter(Boolean).map(line => {
     const [id, name, pane, cwd, title, serverPid, created, threadId] = line.split('\x1f');
     return { id, serverPid, created, ...(threadId?{threadId}:{}), name: title || name, sessionName:name, pane, cwd, profile:name?.split('-')[0], available:true };
-  }).filter(s => /^\$\d+$/.test(s.id) && /^%\d+$/.test(s.pane) && /^(codex[23l]?|claude[2l]?|claudelp)(?:-|$)/.test(s.sessionName)).map(s=>({...s,id:s.serverPid&&s.created?`${s.serverPid}:${s.id}:${s.created}`:s.id}));
+  }).filter(s => /^\$\d+$/.test(s.id) && /^%\d+$/.test(s.pane) && /^(codex[23l]?|claude[2l]?|claudelp|opencode|neon)(?:-|$)/.test(s.sessionName)).map(s=>({...s,id:s.serverPid&&s.created?`${s.serverPid}:${s.id}:${s.created}`:s.id}));
 }
 async function sessions(exec = run) {
   try { return parseSessions((await exec('tmux',['list-panes','-a','-F','#{?#{&&:#{window_active},#{pane_active}},#{session_id}\x1f#{session_name}\x1f#{pane_id}\x1f#{pane_current_path}\x1f#{@title}\x1f#{pid}\x1f#{session_created}\x1f#{@agent_glue_thread_id},}'], {timeout:1500,maxBuffer:1024*1024})).stdout); }
@@ -20,9 +20,9 @@ function sessionForTerminal(terminal,list,mappedName){
   const mapped=list.find(s=>s.sessionName===mappedName);
   if(mapped)return mapped;
   const name=String(terminal?.name||'').trim();
-  if(!name||/^(bash|zsh|sh|tmux|node|claude|codex)$/i.test(name))return undefined;
+  if(!name||/^(bash|zsh|sh|tmux|node|claude|codex|opencode)$/i.test(name))return undefined;
   const matches=list.filter(s=>{
-    const short=s.sessionName.replace(/^(?:codex[23l]?|claude[2l]?|claudelp)-/,'').replace(/^\d{8}_\d{6}-|-[0-9]{8}_[0-9]{6}$/g,'');
+    const short=s.sessionName.replace(/^(?:codex[23l]?|claude[2l]?|claudelp|opencode|neon)-/,'').replace(/^\d{8}_\d{6}-|-[0-9]{8}_[0-9]{6}$/g,'');
     return [s.name,s.sessionName,short].includes(name);
   });
   return matches.length===1?matches[0]:undefined;

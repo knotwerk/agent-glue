@@ -258,7 +258,7 @@ test('state events still preserve renames of multiple terminals',async()=>{
 });
 
 test('ordinary shells become agent terminals after a new PID promise, across supported accounts',async()=>{
- for(const profile of ['claude','claude2','claudel','claudelp','codex','codex2','codex3','codexl']){
+ for(const profile of ['claude','claude2','claudel','claudelp','codex','codex2','codex3','codexl','opencode','neon']){
   let connected=false;
   const session=profile+'-keen-grove',terminal={name:'zsh',processId:Promise.resolve(undefined),creationOptions:{shellPath:'/bin/zsh'}};
   const h=host({terminals:[terminal],sessions:()=>connected?[session,'keen-grove','','1700000000','$7','500'].join('\x1f')+'\n':'',clients:()=>connected?`82\x1f${session}\n`:'',processes:()=> '82 81 tmux: client\n81 1 zsh\n'});
@@ -270,6 +270,12 @@ test('ordinary shells become agent terminals after a new PID promise, across sup
   assert.ok(!h.calls.some(c=>c.file?.endsWith('agent-tmux-rename.zsh')),'a process title is not a user rename');
   terminal.name='My chosen label';assert.equal(h.api.titleForTerminal(terminal),'My chosen label');
  }
+});
+
+test('OpenCode sessions attach but are not offered as fork or handoff accounts',async()=>{
+ const h=host({sessions:()=>['neon-fixture-20261014_120000','Fixture agent','','1700000000'].join('\x1f')+'\n'});await h.api.refresh();
+ assert.equal(h.api.sessionForTerminal(h.terminals[0]),'neon-fixture-20261014_120000');
+ assert.ok(h.api.handoffProfiles.includes('codex2'));assert.ok(!h.api.handoffProfiles.some(profile=>/opencode|neon/.test(profile)));
 });
 
 test('relaunch with a changed numeric PID is rediscovered without waiting for or accepting an older promise',async()=>{

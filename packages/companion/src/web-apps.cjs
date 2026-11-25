@@ -62,7 +62,7 @@ class WebApps{
   // Match the listening process itself, never its ancestry: agents also launch real web servers.
   const infrastructure=new Set(ports.filter(port=>{
    const name=(processes.find(p=>p.pid===port.pid)?.name||port.name||'').split('/').at(-1);
-   return /^(?:codex|claude)(?:[0-9]+|l|lp)?$/.test(name);
+   return /^(?:(?:codex|claude)(?:[0-9]+|l|lp)?|opencode)$/.test(name);
   }).map(port=>port.port));
   await registrations;
   const candidates=[],registeredUrls=new Map();

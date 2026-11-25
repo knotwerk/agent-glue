@@ -166,6 +166,14 @@ else
         cmd="CLAUDE_CONFIG_DIR=${(q)claude_config_dir} command claude --name$(quote_cmd_args "$title") --resume"
       fi
       ;;
+    opencode)
+      cmd="command opencode --session$(quote_cmd_args "$resume_id")"
+      ;;
+    neon)
+      # `neon` is a launcher function in the user's ~/.zshrc (OpenCode with its
+      # own provider environment and flags), so it restarts through that function.
+      cmd="neon --session$(quote_cmd_args "$resume_id")"
+      ;;
     *)
       print -u2 -- "unsupported agent program: $program"
       exit 2
@@ -178,7 +186,8 @@ else
     if typeset -f agent_tmux_log_event >/dev/null 2>&1; then
       agent_tmux_log_event restore "$session" "$title" "$program" "$created" "$cwd" "$cmd" "$old_session" >/dev/null 2>&1 || true
     fi
-    tmux send-keys -t "=$session" "cd ${(q)cwd} && $cmd" Enter
+    # A pane target needs the trailing colon; tmux 3.6 rejects a bare "=name" here.
+    tmux send-keys -t "=$session:" "cd ${(q)cwd} && $cmd" Enter
     sync_tasks_later
   elif ! tmux has-session -t "=$session" 2>/dev/null; then
     print -u2 -- "agent-tmux-restore: failed to create tmux session: $session"

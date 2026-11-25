@@ -23,10 +23,10 @@ resolve_session() {
   fi
 
   local prog stamp
-  if [[ "$requested" =~ '^(codex|codex2|codex3|codexl|claude|claude2|claudel|claudelp)-(.+)-([0-9]{8}_[0-9]{6})$' ]]; then
+  if [[ "$requested" =~ '^(codex|codex2|codex3|codexl|claude|claude2|claudel|claudelp|opencode|neon)-(.+)-([0-9]{8}_[0-9]{6})$' ]]; then
     prog="${match[1]}"
     stamp="${match[3]}"
-  elif [[ "$requested" =~ '^(codex|codex2|codex3|codexl|claude|claude2|claudel|claudelp)-([0-9]{8}_[0-9]{6})-(.+)$' ]]; then
+  elif [[ "$requested" =~ '^(codex|codex2|codex3|codexl|claude|claude2|claudel|claudelp|opencode|neon)-([0-9]{8}_[0-9]{6})-(.+)$' ]]; then
     prog="${match[1]}"
     stamp="${match[2]}"
   else
@@ -87,9 +87,9 @@ fi
 
 session_title_from_name() {
   local name="$1"
-  if [[ "$name" =~ '^(codex|codex2|codex3|codexl|claude|claude2|claudel|claudelp)-(.+)-[0-9]{8}_[0-9]{6}$' ]]; then
+  if [[ "$name" =~ '^(codex|codex2|codex3|codexl|claude|claude2|claudel|claudelp|opencode|neon)-(.+)-[0-9]{8}_[0-9]{6}$' ]]; then
     print -r -- "${match[2]}"
-  elif [[ "$name" =~ '^(codex|codex2|codex3|codexl|claude|claude2|claudel|claudelp)-[0-9]{8}_[0-9]{6}-(.+)$' ]]; then
+  elif [[ "$name" =~ '^(codex|codex2|codex3|codexl|claude|claude2|claudel|claudelp|opencode|neon)-[0-9]{8}_[0-9]{6}-(.+)$' ]]; then
     print -r -- "${match[2]}"
   else
     print -r -- "$name"

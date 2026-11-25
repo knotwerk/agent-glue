@@ -18,10 +18,14 @@ test('parseSessions keeps only well-formed agent panes', () => {
     line('1', 'claude-bad-id', '%7', '/s'),
     line('$5', 'claude-bad-pane', '7', '/s'),
     line('$6', 'codex9-nope', '%8', '/s'),
+    line('$7', 'neon-review', '%9', '/t'),
+    line('$8', 'opencode-docs', '%10', '/u'),
+    line('$9', 'neonish-nope', '%11', '/s'),
     '',
   ].join('\n');
   const parsed = core.parseSessions(out);
-  assert.deepEqual(parsed.map(s => s.sessionName), ['claude-main', 'codex2-api', 'claudelp-x']);
+  assert.deepEqual(parsed.map(s => s.sessionName), ['claude-main', 'codex2-api', 'claudelp-x', 'neon-review', 'opencode-docs']);
+  assert.equal(parsed[3].profile, 'neon');
   assert.equal(parsed[0].name, 'Fix bug');
   assert.equal(parsed[1].name, 'codex2-api');
   assert.equal(parsed[1].profile, 'codex2');

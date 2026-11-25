@@ -9,6 +9,10 @@ VS Code terminals to existing `claude*` and `codex*` tmux sessions, keeps their
 titles, reconnects live sessions after a reload, and generates attach/restore
 tasks.
 
+OpenCode sessions named `opencode-*` or `neon-*` attach, rename and restore the
+same way. Their saved conversation is found with `opencode session list` in the
+session's folder. Forks, handoff notes and live status remain Claude/Codex only.
+
 **Early preview.** Requires VS Code 1.100+, a trusted workspace, and the agent
 CLIs installed and authenticated separately. Install this extension on the SSH
 host, start your agent inside a named tmux session such as `claude-my-project`

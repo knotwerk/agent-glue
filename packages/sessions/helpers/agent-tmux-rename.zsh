@@ -45,10 +45,10 @@ resolve_session() {
   fi
 
   local prog stamp
-  if [[ "$requested" =~ '^(codex|codex2|codex3|codexl|claude|claude2|claudel|claudelp)-(.+)-([0-9]{8}_[0-9]{6})$' ]]; then
+  if [[ "$requested" =~ '^(codex|codex2|codex3|codexl|claude|claude2|claudel|claudelp|opencode|neon)-(.+)-([0-9]{8}_[0-9]{6})$' ]]; then
     prog="${match[1]}"
     stamp="${match[3]}"
-  elif [[ "$requested" =~ '^(codex|codex2|codex3|codexl|claude|claude2|claudel|claudelp)-([0-9]{8}_[0-9]{6})-(.+)$' ]]; then
+  elif [[ "$requested" =~ '^(codex|codex2|codex3|codexl|claude|claude2|claudel|claudelp|opencode|neon)-([0-9]{8}_[0-9]{6})-(.+)$' ]]; then
     prog="${match[1]}"
     stamp="${match[2]}"
   else
@@ -76,15 +76,15 @@ session_parts() {
   local session="$1" tagged_title="${2:-}"
   local program stem stamp
 
-  if [[ "$session" =~ '^(codex|codex2|codex3|codexl|claude|claude2|claudel|claudelp)-(.+)-([0-9]{8}_[0-9]{6})$' ]]; then
+  if [[ "$session" =~ '^(codex|codex2|codex3|codexl|claude|claude2|claudel|claudelp|opencode|neon)-(.+)-([0-9]{8}_[0-9]{6})$' ]]; then
     program="${match[1]}"
     stem="${match[2]}"
     stamp="${match[3]}"
-  elif [[ "$session" =~ '^(codex|codex2|codex3|codexl|claude|claude2|claudel|claudelp)-([0-9]{8}_[0-9]{6})-(.+)$' ]]; then
+  elif [[ "$session" =~ '^(codex|codex2|codex3|codexl|claude|claude2|claudel|claudelp|opencode|neon)-([0-9]{8}_[0-9]{6})-(.+)$' ]]; then
     program="${match[1]}"
     stamp="${match[2]}"
     stem="${match[3]}"
-  elif [[ "$session" =~ '^(codex|codex2|codex3|codexl|claude|claude2|claudel|claudelp)-(.+)$' ]]; then
+  elif [[ "$session" =~ '^(codex|codex2|codex3|codexl|claude|claude2|claudel|claudelp|opencode|neon)-(.+)$' ]]; then
     program="${match[1]}"
     stem="${match[2]}"
     stamp=""

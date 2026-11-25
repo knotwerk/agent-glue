@@ -20,15 +20,15 @@ agent_tmux_session_fields() {
   local session="$1" tagged_title="$2" created="$3"
   local prog stem stamp title
 
-  if [[ "$session" =~ '^(codex|codex2|codex3|codexl|claude|claude2|claudel|claudelp)-(.+)-([0-9]{8}_[0-9]{6})$' ]]; then
+  if [[ "$session" =~ '^(codex|codex2|codex3|codexl|claude|claude2|claudel|claudelp|opencode|neon)-(.+)-([0-9]{8}_[0-9]{6})$' ]]; then
     prog="${match[1]}"
     stem="${match[2]}"
     stamp="${match[3]}"
-  elif [[ "$session" =~ '^(codex|codex2|codex3|codexl|claude|claude2|claudel|claudelp)-([0-9]{8}_[0-9]{6})-(.+)$' ]]; then
+  elif [[ "$session" =~ '^(codex|codex2|codex3|codexl|claude|claude2|claudel|claudelp|opencode|neon)-([0-9]{8}_[0-9]{6})-(.+)$' ]]; then
     prog="${match[1]}"
     stamp="${match[2]}"
     stem="${match[3]}"
-  elif [[ "$session" =~ '^(codex|codex2|codex3|codexl|claude|claude2|claudel|claudelp)-(.+)$' ]]; then
+  elif [[ "$session" =~ '^(codex|codex2|codex3|codexl|claude|claude2|claudel|claudelp|opencode|neon)-(.+)$' ]]; then
     [[ -n "$tagged_title" ]] || return 1
     prog="${match[1]}"
     stem="${match[2]}"
@@ -214,11 +214,41 @@ agent_tmux_infer_claude_session_id() {
     | cut -f2
 }
 
+# OpenCode keeps conversations in its own store. Ask the CLI for the sessions of
+# the project in $cwd and take the one in that folder started closest to the tmux
+# session. OpenCode creates a session at the first message, not at launch.
+agent_tmux_infer_opencode_session_id() {
+  local created="$1" cwd="$2"
+  local physical_cwd created_ms
+  local -a limit
+  [[ -d "$cwd" && "$created" == <-> ]] || return 1
+  command -v opencode >/dev/null 2>&1 || return 1
+  command -v timeout >/dev/null 2>&1 && limit=(timeout 10)
+  physical_cwd="$(agent_tmux_physical_path "$cwd")"
+  created_ms=$(( created * 1000 ))
+
+  (cd "$cwd" 2>/dev/null && "${limit[@]}" opencode session list --format json -n 50 2>/dev/null) \
+    | jq -r \
+      --arg cwd "$cwd" \
+      --arg physical_cwd "$physical_cwd" \
+      --argjson created_ms "$created_ms" '
+        .[]? |
+        select((.directory == $cwd or .directory == $physical_cwd)
+          and ((.id // "") | test("^ses_[A-Za-z0-9]+$"))
+          and (.created // 0) >= ($created_ms - 120000)) |
+        [(((.created // 0) - $created_ms) | if . < 0 then -. else . end), .id] | @tsv
+      ' 2>/dev/null \
+    | sort -n \
+    | head -1 \
+    | cut -f2
+}
+
 agent_tmux_resume_id() {
   local program="$1" created="$2" cwd="$3"
   case "$program" in
     codex|codex2|codex3|codexl) agent_tmux_infer_codex_session_id "$program" "$created" "$cwd" ;;
     claude|claude2|claudel|claudelp) agent_tmux_infer_claude_session_id "$program" "$created" "$cwd" ;;
+    opencode|neon) agent_tmux_infer_opencode_session_id "$created" "$cwd" ;;
     *)            return 1 ;;
   esac
 }
@@ -280,6 +310,13 @@ agent_tmux_resume_command() {
         print -r -- "claudelp --resume $resume_id"
       else
         print -r -- "claudelp --resume"
+      fi
+      ;;
+    opencode|neon)
+      if [[ -n "$resume_id" ]]; then
+        print -r -- "$program --session $resume_id"
+      else
+        print -r -- "$program --continue"
       fi
       ;;
     *) return 1 ;;

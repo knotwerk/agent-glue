@@ -8,7 +8,9 @@ const execAsync = promisify(exec);
 const execFileAsync = promisify(execFile);
 
 const TMUX_FIELD_SEP = '\x1f';
-const AGENT_PROGRAMS = ['claude', 'claude2', 'claudel', 'claudelp', 'codex', 'codex2', 'codex3', 'codexl'];
+const AGENT_PROGRAMS = ['claude', 'claude2', 'claudel', 'claudelp', 'codex', 'codex2', 'codex3', 'codexl', 'opencode', 'neon'];
+// Forks and handoff notes exist for the Claude and Codex accounts only.
+const HANDOFF_PROGRAMS = AGENT_PROGRAMS.filter(program => /^(claude|codex)/.test(program));
 const AGENT_PROGRAM_PATTERN = AGENT_PROGRAMS
     .slice()
     .sort((a, b) => b.length - a.length)
@@ -718,7 +720,7 @@ function activate(context) {
         void schedule('attachPoll', () => attachSessions({ quiet: true }));
     }, ATTACH_POLL_INTERVAL_MS);
     context.subscriptions.push({ dispose: () => clearInterval(attachPoll) });
-    return { renameTerminal, terminateTerminal, identityForTerminal: terminal => terminalSessionIdentities.get(terminal), handoffProfiles: [...AGENT_PROGRAMS], forkSession: (source,destination,options) => {
+    return { renameTerminal, terminateTerminal, identityForTerminal: terminal => terminalSessionIdentities.get(terminal), handoffProfiles: [...HANDOFF_PROGRAMS], forkSession: (source,destination,options) => {
         const result=operationQueue.catch(()=>{}).then(()=>require('./fork.cjs').forkSession(source,destination,{exec:execFileAsync,createTerminal:options=>vscode.window.createTerminal(options),register:(session,terminal)=>{terminalSessions.set(terminal,session);addSessionTerminal(session,terminal);},handoffDirectory:path.join(context.globalStorageUri.fsPath,'handoffs')},options));
         operationQueue=result.catch(error=>warn('fork',error));return result;
     }, terminalForSession: session => [...(sessionTerminals.get(session) || [])].find(t => vscode.window.terminals.includes(t)), sessionForTerminal: terminal => terminalSessions.get(terminal),

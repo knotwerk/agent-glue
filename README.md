@@ -269,8 +269,10 @@ profiles have different storage rules.
 
 Live tmux sessions retain their account and environment. Agent Glue’s restart
 helper recognizes `codex2`/`codex3`/`codexl` and `claude2`/`claudel`/`claudelp`,
-each using the corresponding hidden directory under your home. Arbitrary custom
-aliases and extra CLI flags need manual restart. Agent Glue does not add
+each using the corresponding hidden directory under your home. OpenCode sessions
+named `opencode-*` restart with `opencode --session <id>`; `neon-*` sessions
+restart through a `neon` function in `~/.zshrc`, which supplies its own provider
+environment and flags. Other custom aliases and extra CLI flags need manual restart. Agent Glue does not add
 permission-bypass flags or manage your credentials.
 
 ## Register a project web app
